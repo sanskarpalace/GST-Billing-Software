@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu } from 'lucide-react';
+import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu, BedDouble } from 'lucide-react';
 import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus } from './store';
 import { isModuleEnabled, getUpcomingFilings, countsAsSales, localToday, toLocalIsoDate, DOCS_URL } from './utils';
 // v1.10.4 — Route-level lazy loading. Prior App.jsx synchronously
@@ -32,6 +32,7 @@ const ReceiptVoucher = lazy(() => import('./components/ReceiptVoucher'));
 const GSTReturns = lazy(() => import('./components/GSTReturns'));
 const IncomeTax = lazy(() => import('./components/IncomeTax'));
 const PurchaseBills = lazy(() => import('./components/PurchaseBills'));
+const FrontDesk = lazy(() => import('./components/FrontDesk'));
 const ControlPanel = lazy(() => import('./components/ControlPanel'));
 const SupportView = lazy(() => import('./components/SupportView'));
 import StarBanner from './components/StarBanner';
@@ -72,7 +73,7 @@ function App() {
       const params = new URLSearchParams(window.location.search);
       const v = params.get('view');
       // v1.10.74 - 'controlpanel' added so ?view=controlpanel deep links work too.
-      const valid = ['dashboard', 'new', 'clients', 'inventory', 'expenses', 'purchases', 'recurring', 'receipts', 'reports', 'filing', 'incometax', 'settings', 'controlpanel', 'support'];
+      const valid = ['dashboard', 'new', 'frontdesk', 'clients', 'inventory', 'expenses', 'purchases', 'recurring', 'receipts', 'reports', 'filing', 'incometax', 'settings', 'controlpanel', 'support'];
       if (v && valid.includes(v)) {
         // Strip the query string so a refresh doesn't keep snapping back to
         // the shortcut target — only the *first* navigation honours it.
@@ -509,6 +510,14 @@ function App() {
     setCurrentView('new');
   };
 
+  // Front Desk: check-out → open a new, prefilled invoice (guest + room nights).
+  const handleCreateInvoiceFromStay = (prefill) => {
+    setEditorKey((k) => k + 1);
+    sessionStorage.removeItem('gst_invoiceDraft');
+    setEditingBill({ ...JSON.parse(JSON.stringify(prefill)), _isDuplicate: true });
+    setCurrentView('new');
+  };
+
   // Pull the user's module preferences once per render. Re-mount happens
   // when settings save, which triggers a re-render via the profile state.
   const enabledModules = getEnabledModules();
@@ -528,6 +537,7 @@ function App() {
   const navItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard', module: 'dashboard' },
     { id: 'new', icon: Plus, label: 'New Invoice', onClick: handleNewInvoice, module: 'invoicing' },
+    { id: 'frontdesk', icon: BedDouble, label: 'Front Desk', module: 'frontdesk' },
     { id: 'clients', icon: Users, label: 'Guests', module: 'clients' },
     { id: 'inventory', icon: Package, label: 'Rooms & Services', module: 'inventory' },
     { id: 'expenses', icon: Wallet, label: 'Expenses', module: 'expenses' },
@@ -998,6 +1008,9 @@ function App() {
         )}
         {currentView === 'inventory' && (
           <InventoryView />
+        )}
+        {currentView === 'frontdesk' && (
+          <FrontDesk profile={profile} onCreateInvoiceFromStay={handleCreateInvoiceFromStay} />
         )}
         {/* v1.10.66 (#64 item 1) — `key={businessKey}` remounts these screens
             when the business changes. Each reads the business once when it

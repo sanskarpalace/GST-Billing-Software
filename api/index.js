@@ -185,6 +185,9 @@ crud('recurring','recurring','rec',  (a, b) => (a.clientName || '').localeCompar
 crud('receipts', 'receipts', 'rcp',  byDateDesc);
 crud('purchases','purchases','pur',  byDateDesc);
 crud('profiles', 'profiles', 'biz',  (a, b) => (a.businessName || '').localeCompare(b.businessName || ''));
+// Front Desk (hotel) collections.
+crud('rooms',    'rooms',    'room', (a, b) => String(a.number || '').localeCompare(String(b.number || ''), undefined, { numeric: true }));
+crud('bookings', 'bookings', 'bkg',  (a, b) => String(a.checkIn || '').localeCompare(String(b.checkIn || '')));
 
 // ===========================================================================
 // TERMS TEMPLATES (special: seeds a default when empty)

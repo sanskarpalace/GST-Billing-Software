@@ -1859,6 +1859,14 @@ export const isValidUpiId = (s) => /^[\w.-]+@[\w.-]+$/.test(String(s || '').trim
 // any related fields/sections in other views are suppressed too.
 export const FEATURE_GROUPS = [
   {
+    id: 'frontdesk',
+    label: 'Front Desk (Hotel)',
+    description: 'Rooms, bookings, check-in / check-out, event blocks',
+    modules: [
+      { id: 'frontdesk', label: 'Front Desk (rooms, bookings, check-in/out)', nav: 'frontdesk', defaultOn: true },
+    ],
+  },
+  {
     id: 'sales',
     label: 'Sales & Invoicing',
     description: 'Invoice creation, recurring invoices, payment receipts',

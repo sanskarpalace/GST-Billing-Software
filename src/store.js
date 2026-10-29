@@ -250,6 +250,24 @@ export const deleteClient = async (id) => {
   return apiFetch(`${API}/clients/${encodeURIComponent(id)}`, { method: 'DELETE' });
 };
 
+// ---- Front Desk: Rooms ----
+export const getAllRooms = async () => apiFetch(`${API}/rooms`);
+export const saveRoom = async (room) => {
+  const res = await apiFetch(`${API}/rooms`, { method: 'POST', body: JSON.stringify(room) });
+  if (res.id) room.id = res.id;
+  return room;
+};
+export const deleteRoom = async (id) => apiFetch(`${API}/rooms/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
+// ---- Front Desk: Bookings (stays, reservations, event blocks) ----
+export const getAllBookings = async () => apiFetch(`${API}/bookings`);
+export const saveBooking = async (b) => {
+  const res = await apiFetch(`${API}/bookings`, { method: 'POST', body: JSON.stringify(b) });
+  if (res.id) b.id = res.id;
+  return b;
+};
+export const deleteBooking = async (id) => apiFetch(`${API}/bookings/${encodeURIComponent(id)}`, { method: 'DELETE' });
+
 // ---- GSTIN → registered name lookup ----
 // Best-effort. Resolves to { ok, legalName, tradeName, address } when the
 // server has a GSTIN_API_KEY configured, else { ok:false, error }. Callers

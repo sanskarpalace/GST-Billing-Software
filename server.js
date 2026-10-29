@@ -90,7 +90,7 @@ app.use((req, res, next) => {
 });
 
 // Ensure data directory and sub-directories exist
-const DIRS = ['bills', 'clients', 'templates', 'products', 'expenses', 'recurring', 'receipts', 'profiles', 'purchases'];
+const DIRS = ['bills', 'clients', 'templates', 'products', 'expenses', 'recurring', 'receipts', 'profiles', 'purchases', 'rooms', 'bookings'];
 for (const dir of DIRS) {
   const dirPath = path.join(DATA_DIR, dir);
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
@@ -528,6 +528,38 @@ app.post('/api/profiles', (req, res) => {
 app.delete('/api/profiles/:id', (req, res) => {
   const filePath = path.join(DATA_DIR, 'profiles', safeFileName(req.params.id) + '.json');
   deleteFile(filePath);
+  res.json({ success: true });
+});
+
+// ========================
+// ROOMS + BOOKINGS (Front Desk / hotel)
+// ========================
+app.get('/api/rooms', (req, res) => {
+  const rooms = readAllFromDir('rooms');
+  rooms.sort((a, b) => String(a.number || '').localeCompare(String(b.number || ''), undefined, { numeric: true }));
+  res.json(rooms);
+});
+app.post('/api/rooms', (req, res) => {
+  const room = req.body; if (!room.id) room.id = 'room_' + Date.now();
+  writeJSON(path.join(DATA_DIR, 'rooms', safeFileName(room.id) + '.json'), room);
+  res.json({ success: true, id: room.id });
+});
+app.delete('/api/rooms/:id', (req, res) => {
+  deleteFile(path.join(DATA_DIR, 'rooms', safeFileName(req.params.id) + '.json'));
+  res.json({ success: true });
+});
+app.get('/api/bookings', (req, res) => {
+  const bookings = readAllFromDir('bookings');
+  bookings.sort((a, b) => String(a.checkIn || '').localeCompare(String(b.checkIn || '')));
+  res.json(bookings);
+});
+app.post('/api/bookings', (req, res) => {
+  const bkg = req.body; if (!bkg.id) bkg.id = 'bkg_' + Date.now();
+  writeJSON(path.join(DATA_DIR, 'bookings', safeFileName(bkg.id) + '.json'), bkg);
+  res.json({ success: true, id: bkg.id });
+});
+app.delete('/api/bookings/:id', (req, res) => {
+  deleteFile(path.join(DATA_DIR, 'bookings', safeFileName(req.params.id) + '.json'));
   res.json({ success: true });
 });
 
