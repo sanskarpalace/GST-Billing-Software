@@ -21,7 +21,13 @@ const nightsBetween = (a, b) => {
 };
 const fmtDate = (iso) => (iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '');
 // A booking "covers" a day when checkIn <= day < checkOut (checkout day is free).
-const coversDay = (b, day) => b.checkIn && b.checkOut && b.checkIn <= day && day < b.checkOut;
+// Stays: checkout day is free (checkIn <= day < checkOut). Event blocks are
+// inclusive of both ends, so a single-day event (from == to) still blocks it.
+const coversDay = (b, day) => {
+  if (!b.checkIn || !b.checkOut) return false;
+  if (b.kind === 'block') return b.checkIn <= day && day <= b.checkOut;
+  return b.checkIn <= day && day < b.checkOut;
+};
 const rangesOverlap = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
 const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
 
@@ -272,14 +278,14 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
           {blocks.length === 0 ? (
             <div className="empty-state"><CalendarDays size={48} /><p>No event blocks. Hold rooms for a wedding, conference, etc.</p><button className="btn btn-primary" onClick={() => setBlockModal(true)}><Plus size={18} /> Block for event</button></div>
           ) : (
-            <div className="table-scroll"><table className="data-table"><thead><tr><th>Event</th><th>Rooms</th><th>From</th><th>To</th><th>Nights</th><th className="col-center">Actions</th></tr></thead>
+            <div className="table-scroll"><table className="data-table"><thead><tr><th>Event</th><th>Rooms</th><th>From</th><th>To</th><th>Days</th><th className="col-center">Actions</th></tr></thead>
               <tbody>{blocks.map((b) => (
                 <tr key={b.id}>
                   <td className="font-medium">🎉 {b.eventName || 'Event'}{b.notes ? <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{b.notes}</div> : null}</td>
                   <td>{(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</td>
                   <td>{fmtDate(b.checkIn)}</td>
                   <td>{fmtDate(b.checkOut)}</td>
-                  <td>{nightsBetween(b.checkIn, b.checkOut)}</td>
+                  <td>{nightsBetween(b.checkIn, b.checkOut) + 1}</td>
                   <td><div className="table-actions" style={{ justifyContent: 'center' }}>
                     <button className="icon-btn icon-btn-red" title="Remove block" onClick={() => removeBooking(b, 'Event block')}><Trash2 size={14} /></button>
                   </div></td>
@@ -497,7 +503,7 @@ function BlockModal({ rooms, initialSelected = [], onClose, onSaved }) {
   const save = async () => {
     if (!form.eventName.trim()) { toast('Event name is required', 'warning'); return; }
     if (selected.size === 0) { toast('Select at least one room', 'warning'); return; }
-    if (nights <= 0) { toast('End date must be after start date', 'warning'); return; }
+    if (!form.checkIn || !form.checkOut || form.checkOut < form.checkIn) { toast('Pick a valid date range', 'warning'); return; }
     setSaving(true);
     try {
       await saveBooking({ kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
@@ -530,7 +536,7 @@ function BlockModal({ rooms, initialSelected = [], onClose, onSaved }) {
           </div>
         )}
       </div>
-      <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{nights > 0 ? `${nights} night${nights > 1 ? 's' : ''}` : 'Set valid dates'}</div>
+      <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{(form.checkIn && form.checkOut && form.checkOut >= form.checkIn) ? `${nights + 1} day${nights + 1 > 1 ? 's' : ''} blocked` : 'Pick a valid date range'}</div>
       <div className="flex gap-2 justify-end mt-4"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>Block rooms</button></div>
     </div></div>
   );
