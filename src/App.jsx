@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
-import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu, BedDouble } from 'lucide-react';
+import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu, BedDouble, LogOut } from 'lucide-react';
 import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus, getWhoami } from './store';
 
 // Sidebar sections the "manager" role does not see (admin keeps everything).
@@ -495,6 +495,19 @@ function App() {
     deferredPrompt.current = null;
   };
 
+  const handleLogout = () => {
+    if (!window.confirm('Log out of Sanskar Palace Billing?')) return;
+    // HTTP Basic Auth has no real logout, so overwrite the browser's cached
+    // credential with a throwaway one (a request the server rejects), then
+    // reload — the browser then re-prompts for a fresh login.
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', '/api/whoami?logout=1', false, 'loggedout', String(Date.now()));
+      xhr.send();
+    } catch { /* a 401 here is expected */ }
+    window.location.replace('/');
+  };
+
   const dismissInstallBanner = () => {
     setShowInstallBanner(false);
     // Timestamp-based dismissal — the 14-day cool-down in the install-prompt
@@ -837,7 +850,7 @@ function App() {
         <div className="sidebar-brand">
           <div className="sidebar-logo" style={{ overflow: 'hidden', padding: 0 }}>
             {profile?.logo
-              ? <img src={profile.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', display: 'block' }} />
+              ? <img src={profile.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit', display: 'block' }} />
               : <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-muted)' }}>{(profile?.businessName || '').charAt(0).toUpperCase()}</span>}
           </div>
           <div>
@@ -993,6 +1006,9 @@ function App() {
               )}
             </button>
             )}
+            <button className="nav-btn" onClick={handleLogout} title="Log out and switch user">
+              <LogOut size={18} /> Log out
+            </button>
             <div className={`server-status server-status-${serverStatus}`}>
               <span className="server-status-dot" />
               {serverStatus === 'online' ? 'App Ready' : serverStatus === 'offline' ? 'App Not Running' : 'Connecting...'}
