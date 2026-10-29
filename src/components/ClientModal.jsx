@@ -73,12 +73,12 @@ export default function ClientModal({ show, onClose, onSave, client, isEditing, 
     <div className="modal-overlay">
       <div className="modal-content" style={{ maxWidth: '520px' }}>
         <div className="flex justify-between items-center mb-4">
-          <h3 className="section-title" style={{ margin: 0 }}>{isEditing ? 'Edit Client' : 'Add New Client'}</h3>
+          <h3 className="section-title" style={{ margin: 0 }}>{isEditing ? 'Edit Guest' : 'Add New Guest'}</h3>
           <button type="button" className="icon-btn" onClick={onClose} title="Close"><X size={18} /></button>
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="form-group" style={{ gridColumn: 'span 2' }}>
-            <label className="form-label">Client Name *</label>
+            <label className="form-label">Guest Name *</label>
             <input type="text" className="form-input" value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. Sandeep Panwar" />
           </div>
           <div className="form-group" style={{ gridColumn: 'span 2' }}>

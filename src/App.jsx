@@ -818,7 +818,9 @@ function App() {
       <div className={`sidebar${navOpen ? ' sidebar-open' : ''}`} onClick={closeNavAfterPick}>
         <div className="sidebar-brand">
           <div className="sidebar-logo">
-            <FileText size={22} />
+            {profile?.logo
+              ? <img src={profile.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit' }} />
+              : <FileText size={22} />}
           </div>
           <div>
             <h2 className="sidebar-title">Sanskar Palace</h2>

@@ -1319,6 +1319,35 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
     } catch { /* lookup unavailable — keep manual entry */ }
   };
 
+  // Hotel: when both stay dates are set, fill each room line's quantity with
+  // the number of nights — but only when that line's quantity is still the
+  // default (blank/0/1), so a manually typed quantity is never overwritten.
+  // Rooms are detected by their unit being Day/Night (how the catalog saves
+  // rooms). F&B / other lines (unit Pcs, etc.) are left untouched.
+  useEffect(() => {
+    const ci = details.checkIn, co = details.checkOut;
+    if (!ci || !co) return;
+    const d1 = new Date(ci), d2 = new Date(co);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return;
+    const nights = Math.round((d2 - d1) / 86400000);
+    if (nights <= 0) return;
+    setItems(prev => {
+      let changed = false;
+      const next = prev.map(it => {
+        const u = String(it.unit || '').toLowerCase();
+        const isRoom = u === 'day' || u === 'night' || u === 'days' || u === 'nights';
+        const q = Number(it.quantity);
+        if (isRoom && (it.quantity === '' || it.quantity == null || q === 0 || q === 1) && q !== nights) {
+          changed = true;
+          return { ...it, quantity: nights };
+        }
+        return it;
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [details.checkIn, details.checkOut]);
+
   const handleTypeChange = async (type) => {
     if (isIssuedInvoice) return;
     setInvoiceType(type);
@@ -4034,7 +4063,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
           {/* Client Details */}
           <div className="glass-panel p-6 mb-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="section-title" style={{ margin: 0 }}>Billed To</h3>
+              <h3 className="section-title" style={{ margin: 0 }}>Guest Details</h3>
             </div>
 
             {/* v1.10.24 — Client credit banner. Shows when the picked
@@ -4095,7 +4124,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
 
             <div className="grid grid-cols-2 gap-4">
               <div className="form-group full-width" style={{ position: 'relative' }}>
-                <label className="form-label">Client Name</label>
+                <label className="form-label">Guest Name</label>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
                   <input type="text" className="form-input" style={{ flex: 1 }} value={client.name} ref={clientNameRef}
                     onChange={(e) => {
@@ -4157,7 +4186,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
                     ))}
                     {client.name.trim() && (
                       <button type="button" className="client-suggestion-save" onClick={openAddClientModal}>
-                        <UserPlus size={14} /> Save "{client.name.trim()}" as new client
+                        <UserPlus size={14} /> Save "{client.name.trim()}" as new guest
                       </button>
                     )}
                     {filteredClients.length === 0 && !client.name.trim() && (

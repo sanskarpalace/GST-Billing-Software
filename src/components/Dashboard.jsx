@@ -1466,7 +1466,7 @@ export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConve
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
               {[
                 ['date', 'Date'], ['invoice', 'Invoice #'], ['type', 'Type'],
-                ['client', 'Client'], ['amount', 'Amount'], ['currency', 'Currency'],
+                ['client', 'Guest'], ['amount', 'Amount'], ['currency', 'Currency'],
                 ['status', 'Status'], ['dueDate', 'Due date'],
                 ['printed', 'Print count'], ['actions', 'Actions'],
               ].map(([key, label]) => (
@@ -1577,7 +1577,7 @@ export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConve
                   {visibleColumns.date && <th>Date</th>}
                   {visibleColumns.invoice && <th>Invoice No.</th>}
                   {visibleColumns.type && <th className="col-center">Type</th>}
-                  {visibleColumns.client && <th>Client</th>}
+                  {visibleColumns.client && <th>Guest</th>}
                   {visibleColumns.amount && <th>Amount</th>}
                   {visibleColumns.currency && <th>Currency</th>}
                   {visibleColumns.dueDate && <th>Due Date</th>}
