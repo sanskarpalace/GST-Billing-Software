@@ -616,11 +616,12 @@ body {
 }
 
 .sidebar-title {
-  font-size: 1.15rem;
+  font-size: 1rem;
   font-weight: 700;
   margin: 0;
   color: white;
   letter-spacing: -0.02em;
+  white-space: nowrap;
 }
 
 .sidebar-subtitle {
