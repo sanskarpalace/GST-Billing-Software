@@ -89,7 +89,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
       clientName: b.guestName || '',
       invoiceType: 'tax-invoice',
       data: {
-        client: { name: b.guestName || '', companyName: b.companyName || '', phone: b.guestPhone || '', gstin: b.guestGstin || '', address: '', city: '', pin: '', state: '', country: 'India', email: '', isSEZ: false },
+        client: { name: b.guestName || '', companyName: b.companyName || '', phone: b.guestPhone || '', gstin: b.guestGstin || '', address: b.address || '', city: '', pin: '', state: '', country: 'India', email: '', isSEZ: false },
         items,
         details: { checkIn: b.checkIn, checkOut: b.checkOut, roomNo: roomNos, guests: b.guests || '', invoiceDate: today },
         invoiceType: 'tax-invoice',
@@ -370,7 +370,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
   const b = ctx.booking || {};
   const today = localToday();
   const [form, setForm] = useState({
-    guestName: b.guestName || '', guestPhone: b.guestPhone || '', companyName: b.companyName || '', guestGstin: b.guestGstin || '',
+    guestName: b.guestName || '', guestPhone: b.guestPhone || '', companyName: b.companyName || '', guestGstin: b.guestGstin || '', address: b.address || '',
     roomId: ctx.roomId || (b.roomIds && b.roomIds[0]) || '',
     checkIn: b.checkIn || today, checkOut: b.checkOut || isoAddDays(today, 1),
     ratePerNight: b.ratePerNight ?? '', guests: b.guests || '', advance: b.advance ?? '', notes: b.notes || '',
@@ -392,6 +392,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
       guestPhone: c.phone || f.guestPhone,
       companyName: c.companyName || f.companyName,
       guestGstin: c.gstin || f.guestGstin,
+      address: c.address || f.address,
     }));
     setShowGuestSuggest(false);
   };
@@ -418,7 +419,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
       await saveBooking({
         ...b, kind: 'stay', status: reserve ? 'reserved' : 'checked-in',
         roomIds: [form.roomId], guestName: form.guestName.trim(), guestPhone: form.guestPhone.trim(),
-        companyName: form.companyName.trim(), guestGstin: form.guestGstin.trim().toUpperCase(),
+        companyName: form.companyName.trim(), guestGstin: form.guestGstin.trim().toUpperCase(), address: form.address.trim(),
         checkIn: form.checkIn, checkOut: form.checkOut,
         ratePerNight: form.ratePerNight === '' ? 0 : parseFloat(form.ratePerNight),
         guests: form.guests.trim(), advance: form.advance === '' ? 0 : parseFloat(form.advance), notes: form.notes.trim(),
@@ -427,7 +428,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
       // Grow the guest directory so repeat guests autocomplete next time.
       const known = clients.some((c) => (c.name || '').trim().toLowerCase() === form.guestName.trim().toLowerCase());
       if (!known) {
-        try { await saveClient({ name: form.guestName.trim(), phone: form.guestPhone.trim(), companyName: form.companyName.trim(), gstin: form.guestGstin.trim().toUpperCase(), country: 'India' }); } catch { /* non-blocking */ }
+        try { await saveClient({ name: form.guestName.trim(), phone: form.guestPhone.trim(), companyName: form.companyName.trim(), gstin: form.guestGstin.trim().toUpperCase(), address: form.address.trim(), country: 'India' }); } catch { /* non-blocking */ }
       }
       toast(reserve ? 'Reservation saved' : `${form.guestName.trim()} checked in`, 'success'); onSaved();
     } catch { toast('Save failed', 'error'); setSaving(false); }
@@ -461,6 +462,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
         <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.guestPhone} onChange={(e) => setForm({ ...form, guestPhone: e.target.value })} placeholder="+91 …" /></div>
         <div className="form-group"><label className="form-label">Company (optional)</label><input className="form-input" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} placeholder="For corporate bookings" /></div>
         <div className="form-group"><label className="form-label">GSTIN (optional)</label><input className="form-input" value={form.guestGstin} onChange={(e) => setForm({ ...form, guestGstin: e.target.value.toUpperCase() })} maxLength={15} /></div>
+        <div className="form-group full-width"><label className="form-label">Address</label><input className="form-input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Guest address / city (prints on the bill)" /></div>
         <div className="form-group"><label className="form-label">Room *</label>
           <select className="form-input" value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value, ratePerNight: '' })}>
             <option value="">Select room</option>
