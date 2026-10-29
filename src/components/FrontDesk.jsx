@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, ReceiptText } from 'lucide-react';
 import { toast } from './Toast';
 import HelpButton from './HelpButton';
-import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking } from '../store';
+import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient } from '../store';
 import { localToday, formatCurrency } from '../utils';
 
 // ---- date helpers (local, YYYY-MM-DD) ----
@@ -339,6 +339,24 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const reserve = ctx.mode === 'reserve';
 
+  // Guest autocomplete from the saved guests (same list as the invoice form).
+  const [clients, setClients] = useState([]);
+  const [showGuestSuggest, setShowGuestSuggest] = useState(false);
+  useEffect(() => { getAllClients().then(setClients).catch(() => {}); }, []);
+  const guestMatches = form.guestName.trim()
+    ? clients.filter((c) => (c.name || '').toLowerCase().includes(form.guestName.trim().toLowerCase())).slice(0, 6)
+    : [];
+  const pickGuest = (c) => {
+    setForm((f) => ({
+      ...f,
+      guestName: c.name || '',
+      guestPhone: c.phone || f.guestPhone,
+      companyName: c.companyName || f.companyName,
+      guestGstin: c.gstin || f.guestGstin,
+    }));
+    setShowGuestSuggest(false);
+  };
+
   // default rate from the chosen room
   useEffect(() => {
     if (form.roomId && (form.ratePerNight === '' || form.ratePerNight == null)) {
@@ -367,6 +385,11 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
         guests: form.guests.trim(), advance: form.advance === '' ? 0 : parseFloat(form.advance), notes: form.notes.trim(),
         ...(reserve ? {} : { checkedInAt: b.checkedInAt || new Date().toISOString() }),
       });
+      // Grow the guest directory so repeat guests autocomplete next time.
+      const known = clients.some((c) => (c.name || '').trim().toLowerCase() === form.guestName.trim().toLowerCase());
+      if (!known) {
+        try { await saveClient({ name: form.guestName.trim(), phone: form.guestPhone.trim(), companyName: form.companyName.trim(), gstin: form.guestGstin.trim().toUpperCase(), country: 'India' }); } catch { /* non-blocking */ }
+      }
       toast(reserve ? 'Reservation saved' : `${form.guestName.trim()} checked in`, 'success'); onSaved();
     } catch { toast('Save failed', 'error'); setSaving(false); }
   };
@@ -375,7 +398,27 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
     <div className="modal-overlay"><div className="modal-content" style={{ maxWidth: 520 }}>
       <div className="flex justify-between items-center mb-4"><h3 className="section-title" style={{ margin: 0 }}>{reserve ? (b.id ? 'Edit reservation' : 'New reservation') : 'Check in guest'}</h3><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="form-group"><label className="form-label">Guest name *</label><input className="form-input" value={form.guestName} onChange={(e) => setForm({ ...form, guestName: e.target.value })} placeholder="e.g. Sandeep Panwar" /></div>
+        <div className="form-group" style={{ position: 'relative' }}>
+          <label className="form-label">Guest name *</label>
+          <input className="form-input" value={form.guestName} autoComplete="off"
+            onChange={(e) => { setForm({ ...form, guestName: e.target.value }); setShowGuestSuggest(true); }}
+            onFocus={() => setShowGuestSuggest(true)}
+            onBlur={() => setTimeout(() => setShowGuestSuggest(false), 150)}
+            placeholder="Type to search saved guests or add new" />
+          {showGuestSuggest && guestMatches.length > 0 && (
+            <div className="client-suggestions">
+              {guestMatches.map((c) => (
+                <button type="button" key={c.id} className="client-suggestion-item" onMouseDown={() => pickGuest(c)}>
+                  <div className="client-suggestion-main">
+                    <strong>{c.name}</strong>
+                    {(c.companyName || c.phone) && <small className="client-suggestion-addr">{c.companyName || c.phone}</small>}
+                  </div>
+                  <span>{c.phone || ''}{c.gstin ? ` · ${c.gstin}` : ''}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="form-group"><label className="form-label">Phone</label><input className="form-input" value={form.guestPhone} onChange={(e) => setForm({ ...form, guestPhone: e.target.value })} placeholder="+91 …" /></div>
         <div className="form-group"><label className="form-label">Company (optional)</label><input className="form-input" value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} placeholder="For corporate bookings" /></div>
         <div className="form-group"><label className="form-label">GSTIN (optional)</label><input className="form-input" value={form.guestGstin} onChange={(e) => setForm({ ...form, guestGstin: e.target.value.toUpperCase() })} maxLength={15} /></div>
