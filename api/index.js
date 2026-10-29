@@ -31,27 +31,62 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 
 // ---------------------------------------------------------------------------
-// Shared-password gate. Set APP_PASSWORD (and optionally APP_USER, default
-// "admin") in Vercel env vars. Health check stays open for uptime monitors.
+// Login gate + roles. Two accounts:
+//   admin   / APP_PASSWORD        → full access  (user name from APP_USER)
+//   manager / MANAGER_PASSWORD    → front-desk only (restrictions below)
+// Health check stays open for uptime monitors.
 // ---------------------------------------------------------------------------
+const safeEq = (a, b) => !!a && !!b && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+function roleFor(user, pass) {
+  const admin = process.env.APP_PASSWORD;
+  const adminUser = process.env.APP_USER || 'admin';
+  const mgr = process.env.MANAGER_PASSWORD;
+  if (admin && user === adminUser && safeEq(pass, admin)) return 'admin';
+  if (mgr && user === 'manager' && safeEq(pass, mgr)) return 'manager';
+  return null;
+}
 function requireAuth(req, res, next) {
-  const pass = process.env.APP_PASSWORD;
-  if (!pass) return next(); // not configured → open (dev only; you set this in prod)
+  if (!process.env.APP_PASSWORD) { req.appRole = 'admin'; return next(); } // not configured → open (dev)
   if (req.path === '/api/health') return next();
-  const user = process.env.APP_USER || 'admin';
-  const hdr = req.headers.authorization || '';
-  const [scheme, encoded] = hdr.split(' ');
+  const [scheme, encoded] = (req.headers.authorization || '').split(' ');
   if (scheme === 'Basic' && encoded) {
-    const [u, p] = Buffer.from(encoded, 'base64').toString().split(':');
-    // timing-safe compare
-    const ok = u === user && p.length === pass.length &&
-      crypto.timingSafeEqual(Buffer.from(p), Buffer.from(pass));
-    if (ok) return next();
+    const [u, ...rest] = Buffer.from(encoded, 'base64').toString().split(':');
+    const role = roleFor(u, rest.join(':')); // password may contain ':'
+    if (role) { req.appRole = role; return next(); }
   }
-  res.set('WWW-Authenticate', 'Basic realm="Free GST Billing"');
+  res.set('WWW-Authenticate', 'Basic realm="Sanskar Palace Billing"');
   return res.status(401).send('Authentication required');
 }
 app.use(requireAuth);
+
+// Which endpoints the manager role may NOT use (admin-only). The UI hides these
+// sections too, but this is the real enforcement.
+function managerBlocked(method, p) {
+  if (/^\/api\/expenses(\/|$)/.test(p)) return true;                    // Expenses hidden
+  if (p === '/api/export') return true;                                // data backup/exfil
+  if (method === 'DELETE' && /^\/api\/bills\//.test(p)) return true;    // deleting invoices
+  if (method === 'GET') return false;                                  // other reads are fine
+  if (p === '/api/import') return true;
+  if (p === '/api/profile') return true;                               // business profile
+  if (/^\/api\/profiles(\/|$)/.test(p)) return true;
+  if (p === '/api/local-prefs') return true;
+  if (p === '/api/lock/set') return true;
+  if (p === '/api/number-series/rename') return true;
+  if (/^\/api\/meta\//.test(p) && !p.endsWith('/increment')) return true; // settings (allow counter increment)
+  return false;
+}
+app.use((req, res, next) => {
+  if (req.appRole === 'manager' && managerBlocked(req.method, req.path)) {
+    return res.status(403).json({ error: 'Admin only', code: 'forbidden' });
+  }
+  next();
+});
+
+// Who is logged in (so the UI can hide admin-only sections).
+app.get('/api/whoami', (req, res) => {
+  const role = req.appRole || 'admin';
+  res.json({ role, user: role === 'manager' ? 'manager' : (process.env.APP_USER || 'admin') });
+});
 
 // ---------------------------------------------------------------------------
 // Small helpers

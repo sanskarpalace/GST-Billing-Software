@@ -269,6 +269,11 @@ export const saveBooking = async (b, { force = false } = {}) => {
 };
 export const deleteBooking = async (id) => apiFetch(`${API}/bookings/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
+// ---- Who is logged in (role) ----
+export const getWhoami = async () => {
+  try { return await apiFetch(`${API}/whoami`); } catch { return { role: 'admin' }; }
+};
+
 // ---- GSTIN → registered name lookup ----
 // Best-effort. Resolves to { ok, legalName, tradeName, address } when the
 // server has a GSTIN_API_KEY configured, else { ok:false, error }. Callers

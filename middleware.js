@@ -28,13 +28,16 @@ export default function middleware(request) {
     if (!pass) return next(); // gate not configured → open
 
     const user = process.env.APP_USER || 'admin';
+    const mgrPass = process.env.MANAGER_PASSWORD;
     const header = request.headers.get('authorization') || '';
     if (header.startsWith('Basic ')) {
       const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
       const i = decoded.indexOf(':');
       const u = decoded.slice(0, i);
       const p = decoded.slice(i + 1);
-      if (u === user && p === pass) return next();
+      // Either the admin or the manager credentials pass the gate; the API
+      // (api/index.js) enforces what the manager role may actually do.
+      if ((u === user && p === pass) || (mgrPass && u === 'manager' && p === mgrPass)) return next();
     }
     return new Response('Authentication required', {
       status: 401,

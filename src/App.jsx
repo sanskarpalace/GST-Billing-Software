@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu, BedDouble } from 'lucide-react';
-import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus } from './store';
+import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus, getWhoami } from './store';
+
+// Sidebar sections the "manager" role does not see (admin keeps everything).
+// The API also enforces these — hiding is only the UI half.
+const MANAGER_HIDDEN_VIEWS = new Set(['expenses', 'reports', 'filing', 'incometax', 'settings']);
 import { isModuleEnabled, getUpcomingFilings, countsAsSales, localToday, toLocalIsoDate, DOCS_URL } from './utils';
 // v1.10.4 — Route-level lazy loading. Prior App.jsx synchronously
 // imported all 12 views (~15k LOC combined), so a first-paint on
@@ -98,6 +102,7 @@ function App() {
   const [showWelcome, setShowWelcome] = useState(false);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
+  const [role, setRole] = useState('admin'); // 'admin' | 'manager' — from /api/whoami
   const [serverDown, setServerDown] = useState(false);
   const deferredPrompt = useRef(null);
   const retryTimer = useRef(null);
@@ -371,6 +376,9 @@ function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
+  // Who's logged in — hides admin-only sections for the manager role.
+  useEffect(() => { getWhoami().then((w) => setRole(w?.role || 'admin')).catch(() => {}); }, []);
+
   useEffect(() => {
     sessionStorage.setItem('gst_currentView', currentView);
   }, [currentView]);
@@ -526,9 +534,14 @@ function App() {
     const moduleForView = map[currentView];
     if (moduleForView && !isModuleEnabled(moduleForView, enabledModules)) {
       setCurrentView('dashboard');
+      return;
+    }
+    // Managers can't land on an admin-only view, even via a deep link.
+    if (role === 'manager' && MANAGER_HIDDEN_VIEWS.has(currentView)) {
+      setCurrentView('dashboard');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentView, JSON.stringify(enabledModules)]);
+  }, [currentView, JSON.stringify(enabledModules), role]);
 
   const navItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard', module: 'dashboard' },
@@ -545,7 +558,7 @@ function App() {
     { id: 'incometax', icon: Calculator, label: 'Income Tax', module: 'incomeTax' },
     // v1.10.75 - opens the online documentation, which covers every screen
     // and stays current; the old built-in guide had fallen far behind.
-  ].filter(item => showIfModule(item.module));
+  ].filter(item => showIfModule(item.module) && !(role === 'manager' && MANAGER_HIDDEN_VIEWS.has(item.id)));
 
   // Command palette actions — declared here (not earlier) because the deps
   // array references `navItems` and `handleNewInvoice`, which are consts.
@@ -956,6 +969,7 @@ function App() {
                 <Download size={18} /> Install app
               </button>
             )}
+            {role !== 'manager' && (
             <button
               className={`nav-btn ${currentView === 'settings' ? 'nav-btn-active' : ''}`}
               onClick={() => setCurrentView('settings')}
@@ -970,6 +984,7 @@ function App() {
                 }} title="Update available" />
               )}
             </button>
+            )}
             <div className={`server-status server-status-${serverStatus}`}>
               <span className="server-status-dot" />
               {serverStatus === 'online' ? 'App Ready' : serverStatus === 'offline' ? 'App Not Running' : 'Connecting...'}
