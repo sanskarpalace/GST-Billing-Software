@@ -104,6 +104,13 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
     try { await deleteBooking(b.id); await load(); toast(`${label} removed`, 'info'); } catch { toast('Delete failed', 'error'); }
   };
 
+  // Cancel (undo) a check-in or reservation — frees the room, no bill; it is
+  // kept in History marked as cancelled rather than deleted.
+  const cancelBooking = async (b, label = 'booking') => {
+    if (!window.confirm(`Cancel this ${label}? The room is freed and no bill is made (it stays in History as cancelled).`)) return;
+    if (await persistBooking({ ...b, status: 'cancelled', cancelledAt: new Date().toISOString() })) toast('Cancelled', 'info');
+  };
+
   const removeRoom = async (room) => {
     if (!window.confirm(`Delete room ${room.number}? Existing bookings are not affected.`)) return;
     try { await deleteRoom(room.id); await load(); toast('Room deleted', 'info'); } catch { toast('Delete failed', 'error'); }
@@ -150,10 +157,14 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
               : <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBlockModal({ preselect: [room.id] })}><CalendarDays size={13} /> Block</button>
           ) : (<>
             {key === 'vacant' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBookingModal({ mode: 'checkin', roomId: room.id })}><LogIn size={13} /> Check in</button>}
-            {key === 'reserved' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckIn(booking)}><LogIn size={13} /> Check in</button>}
+            {key === 'reserved' && <>
+              <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckIn(booking)}><LogIn size={13} /> Check in</button>
+              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'reservation')} title="Cancel reservation"><Trash2 size={13} /></button>
+            </>}
             {key === 'occupied' && <>
               <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutAndBill(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
-              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
+              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
+              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'check-in')} title="Cancel this check-in (mistake) — frees the room, no bill"><Trash2 size={13} /></button>
             </>}
             {key === 'blocked' && <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => removeBooking(booking, 'Event block')}><X size={13} /> Release</button>}
           </>)}
