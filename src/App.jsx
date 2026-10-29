@@ -843,6 +843,14 @@ function App() {
           <div>
             <h2 className="sidebar-title">Sanskar Palace</h2>
             <p className="sidebar-subtitle">Hotel Billing</p>
+            <span style={{
+              display: 'inline-block', marginTop: 3, fontSize: '0.6rem', fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.05em', padding: '1px 7px', borderRadius: 999,
+              color: role === 'manager' ? '#b45309' : '#047857',
+              background: role === 'manager' ? 'rgba(217,119,6,0.14)' : 'rgba(4,120,87,0.14)',
+            }} title={`Signed in as ${role === 'manager' ? 'Manager' : 'Admin'}`}>
+              {role === 'manager' ? 'Manager' : 'Admin'}
+            </span>
           </div>
           {/* Auto-hide as a ☰ button (was a text checkbox): pressed = the menu
               shrinks to icons and opens when pointed at. */}
