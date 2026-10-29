@@ -115,7 +115,50 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const reservations = bookings.filter((b) => isActive(b) && b.kind !== 'block' && b.status !== 'checked-in').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
   const blocks = bookings.filter((b) => isActive(b) && b.kind === 'block').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
 
-  const occupiedCount = rooms.filter((r) => roomStatus(r).key === 'occupied').length;
+  const guestRooms = rooms.filter((r) => !r.isHall);
+  const occupiedCount = guestRooms.filter((r) => roomStatus(r).key === 'occupied').length;
+
+  // Board is grouped by floor in this order, then any others.
+  const FLOOR_ORDER = ['Ground', 'First', 'Second'];
+  const byNumber = (a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
+  const floorsPresent = [...new Set(rooms.map((r) => r.floor || 'Other'))];
+  const orderedFloors = [...FLOOR_ORDER.filter((f) => floorsPresent.includes(f)), ...floorsPresent.filter((f) => !FLOOR_ORDER.includes(f))];
+
+  const renderCard = (room) => {
+    const { key, booking } = roomStatus(room);
+    const s = STATUS[key];
+    const hall = !!room.isHall;
+    return (
+      <div key={room.id} className="glass-panel" style={{ padding: '0.85rem', borderLeft: `4px solid ${s.color}`, background: s.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+          <strong style={{ fontSize: hall ? '0.9rem' : '1.05rem' }}>{room.number}</strong>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</span>
+        </div>
+        <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{hall ? '🏛 ' : ''}{room.type || 'Room'}{!hall && room.baseRate ? ` · ${formatCurrency(room.baseRate, currency)}/night` : ''}</div>
+        {booking && (
+          <div style={{ fontSize: '0.8rem' }}>
+            <div style={{ fontWeight: 600 }}>{booking.kind === 'block' ? `🎉 ${booking.eventName || 'Event'}` : (booking.guestName || 'Guest')}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
+          {hall ? (
+            key === 'blocked'
+              ? <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => removeBooking(booking, 'Event block')}><X size={13} /> Release</button>
+              : <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBlockModal({ preselect: [room.id] })}><CalendarDays size={13} /> Block</button>
+          ) : (<>
+            {key === 'vacant' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBookingModal({ mode: 'checkin', roomId: room.id })}><LogIn size={13} /> Check in</button>}
+            {key === 'reserved' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckIn(booking)}><LogIn size={13} /> Check in</button>}
+            {key === 'occupied' && <>
+              <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutAndBill(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
+              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
+            </>}
+            {key === 'blocked' && <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => removeBooking(booking, 'Event block')}><X size={13} /> Release</button>}
+          </>)}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="dashboard-container">
@@ -124,7 +167,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
           <div>
             <h1 className="page-title">Front Desk</h1>
             <p className="page-subtitle">
-              {rooms.length} rooms · {occupiedCount} occupied · {rooms.length - occupiedCount} available today
+              {guestRooms.length} rooms · {occupiedCount} occupied · {guestRooms.length - occupiedCount} available today
             </p>
           </div>
           <HelpButton title="Front Desk — how to use" doc="products">
@@ -164,36 +207,22 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
           {rooms.length === 0 ? (
             <div className="glass-panel empty-state"><BedDouble size={48} /><p>No rooms yet. Add your rooms to start.</p><button className="btn btn-primary" onClick={() => { setTab('rooms'); setRoomModal({}); }}><Plus size={18} /> Add Room</button></div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '0.75rem' }}>
-              {rooms.map((room) => {
-                const { key, booking } = roomStatus(room);
-                const s = STATUS[key];
+            <>
+              {orderedFloors.map((floor) => {
+                const fr = rooms.filter((r) => (r.floor || 'Other') === floor).sort(byNumber);
+                if (!fr.length) return null;
                 return (
-                  <div key={room.id} className="glass-panel" style={{ padding: '0.85rem', borderLeft: `4px solid ${s.color}`, background: s.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                      <strong style={{ fontSize: '1.05rem' }}>{room.number}</strong>
-                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</span>
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{room.type || 'Room'}{room.baseRate ? ` · ${formatCurrency(room.baseRate, currency)}/night` : ''}</div>
-                    {booking && (
-                      <div style={{ fontSize: '0.8rem' }}>
-                        <div style={{ fontWeight: 600 }}>{booking.kind === 'block' ? `🎉 ${booking.eventName || 'Event'}` : (booking.guestName || 'Guest')}</div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</div>
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
-                      {key === 'vacant' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBookingModal({ mode: 'checkin', roomId: room.id })}><LogIn size={13} /> Check in</button>}
-                      {key === 'reserved' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckIn(booking)}><LogIn size={13} /> Check in</button>}
-                      {key === 'occupied' && <>
-                        <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutAndBill(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
-                        <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
-                      </>}
-                      {key === 'blocked' && <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => removeBooking(booking, 'Event block')}><X size={13} /> Release</button>}
+                  <div key={floor} style={{ marginBottom: '1.25rem' }}>
+                    <h3 style={{ margin: '0 0 0.5rem', fontSize: '0.82rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {floor === 'Other' ? 'Other' : `${floor} Floor`} · {fr.length}
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '0.75rem' }}>
+                      {fr.map((room) => renderCard(room))}
                     </div>
                   </div>
                 );
               })}
-            </div>
+            </>
           )}
         </>
       ) : tab === 'reservations' ? (
@@ -265,7 +294,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
-      {blockModal && <BlockModal rooms={rooms} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
+      {blockModal && <BlockModal rooms={rooms} initialSelected={(blockModal && blockModal.preselect) || []} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
     </div>
   );
 }
@@ -353,7 +382,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
         <div className="form-group"><label className="form-label">Room *</label>
           <select className="form-input" value={form.roomId} onChange={(e) => setForm({ ...form, roomId: e.target.value, ratePerNight: '' })}>
             <option value="">Select room</option>
-            {rooms.map((r) => <option key={r.id} value={r.id}>{r.number}{r.type ? ` — ${r.type}` : ''}</option>)}
+            {rooms.filter((r) => !r.isHall).map((r) => <option key={r.id} value={r.id}>{r.number}{r.type ? ` — ${r.type}` : ''}</option>)}
           </select>
         </div>
         <div className="form-group"><label className="form-label">Guests (pax)</label><input className="form-input" value={form.guests} onChange={(e) => setForm({ ...form, guests: e.target.value })} placeholder="e.g. 2 adults" /></div>
@@ -370,10 +399,10 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
 }
 
 // ---------------- Event-block modal (bulk) ----------------
-function BlockModal({ rooms, onClose, onSaved }) {
+function BlockModal({ rooms, initialSelected = [], onClose, onSaved }) {
   const today = localToday();
   const [form, setForm] = useState({ eventName: '', checkIn: today, checkOut: isoAddDays(today, 1), notes: '' });
-  const [selected, setSelected] = useState(() => new Set());
+  const [selected, setSelected] = useState(() => new Set(initialSelected));
   const [saving, setSaving] = useState(false);
   const allSelected = selected.size === rooms.length && rooms.length > 0;
   const toggle = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
