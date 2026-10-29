@@ -97,6 +97,7 @@ function App() {
   });
   const [showWelcome, setShowWelcome] = useState(false);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [canInstall, setCanInstall] = useState(false);
   const [serverDown, setServerDown] = useState(false);
   const deferredPrompt = useRef(null);
   const retryTimer = useRef(null);
@@ -355,20 +356,16 @@ function App() {
   // (was: dismissed forever — too aggressive, users who closed it during
   // a busy moment never saw it again).
   useEffect(() => {
-    const dismissedAt = localStorage.getItem('freegstbill_pwa_dismissed_at');
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches
       || window.navigator.standalone === true; // iOS Safari
-    if (isStandalone) return;
-    // 14-day cool-down on dismissal
-    if (dismissedAt) {
-      const days = (Date.now() - Number(dismissedAt)) / 86400000;
-      if (days < 14) return;
-    }
-
+    if (isStandalone) return; // already installed — nothing to offer
+    const dismissedAt = localStorage.getItem('freegstbill_pwa_dismissed_at');
+    const cooled = dismissedAt && (Date.now() - Number(dismissedAt)) / 86400000 < 14;
     const handler = (e) => {
       e.preventDefault();
       deferredPrompt.current = e;
-      setShowInstallBanner(true);
+      setCanInstall(true);                     // always enable the manual "Install app" button
+      if (!cooled) setShowInstallBanner(true);  // auto-banner respects the 14-day cool-down
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
@@ -484,10 +481,9 @@ function App() {
   const handleInstallPWA = async () => {
     if (!deferredPrompt.current) return;
     deferredPrompt.current.prompt();
-    const result = await deferredPrompt.current.userChoice;
-    if (result.outcome === 'accepted') {
-      setShowInstallBanner(false);
-    }
+    await deferredPrompt.current.userChoice;
+    setShowInstallBanner(false);
+    setCanInstall(false); // the prompt is single-use; the browser re-fires it if still installable
     deferredPrompt.current = null;
   };
 
@@ -549,7 +545,6 @@ function App() {
     { id: 'incometax', icon: Calculator, label: 'Income Tax', module: 'incomeTax' },
     // v1.10.75 - opens the online documentation, which covers every screen
     // and stays current; the old built-in guide had fallen far behind.
-    { id: 'guide', icon: HelpCircle, label: 'User Guide', module: 'dashboard', onClick: openDocs }, // gated by dashboard so it's always available
   ].filter(item => showIfModule(item.module));
 
   // Command palette actions — declared here (not earlier) because the deps
@@ -956,6 +951,11 @@ function App() {
               {darkMode ? <Sun size={18} /> : <Moon size={18} />}
               {darkMode ? 'Light Mode' : 'Dark Mode'}
             </button>
+            {canInstall && (
+              <button className="nav-btn" onClick={handleInstallPWA} title="Install this app on your device (desktop/home-screen icon)">
+                <Download size={18} /> Install app
+              </button>
+            )}
             <button
               className={`nav-btn ${currentView === 'settings' ? 'nav-btn-active' : ''}`}
               onClick={() => setCurrentView('settings')}
@@ -991,7 +991,7 @@ function App() {
       <div className="main-content">
         {currentView !== 'new' && <StarBanner />}
         {currentView === 'dashboard' && (
-          <Dashboard onNew={handleNewInvoice} onEdit={handleEditInvoice} onPrint={handlePrintInvoice} onDuplicate={handleDuplicateInvoice} onConvert={handleConvertToInvoice} onOpenProducts={() => setCurrentView('inventory')} onOpenSettings={() => setCurrentView('settings')} onOpenGuide={openDocs} onOpenSupport={() => setCurrentView('support')} activeProfile={profile} />
+          <Dashboard onNew={handleNewInvoice} onEdit={handleEditInvoice} onPrint={handlePrintInvoice} onDuplicate={handleDuplicateInvoice} onConvert={handleConvertToInvoice} onOpenProducts={() => setCurrentView('inventory')} onOpenSettings={() => setCurrentView('settings')} onOpenSupport={() => setCurrentView('support')} activeProfile={profile} />
         )}
         {currentView === 'new' && (
           <InvoiceGenerator
