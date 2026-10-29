@@ -123,7 +123,7 @@ export default function InventoryView() {
         description: form.description.trim(),
       };
       await saveProduct(product);
-      toast(editingId ? 'Product updated' : 'Product added', 'success');
+      toast(editingId ? 'Item updated' : 'Item added', 'success');
       closeForm();
       loadProducts();
     } catch {
@@ -221,9 +221,9 @@ export default function InventoryView() {
             <h1 className="page-title">Rooms & Services</h1>
             <p className="page-subtitle">Your room types, F&B and service catalog</p>
           </div>
-          <HelpButton title="Products — how to use" doc="products">
+          <HelpButton title="Rooms & Services — how to use" doc="products">
             <ul style={{ paddingLeft: '1.1rem', margin: 0 }}>
-              <li><strong>Add Product</strong>: name, HSN/SAC, purchase and selling price, GST %, unit and stock. Typing the name on an invoice fills the rest in.</li>
+              <li><strong>Add Item</strong>: name, HSN/SAC, price, GST %, unit, and the "service" toggle. Typing the name on an invoice fills the rest in.</li>
               <li><strong>Stock</strong> goes down when you save an invoice and up when you save a purchase bill.</li>
               <li><strong>Import CSV</strong>: columns <code>name, hsn, rate, gst%, unit, stock</code>.</li>
               <li><strong>Low stock</strong> shows in amber, none in red. Set the level in Settings → Low-stock alerts.</li>
@@ -240,7 +240,7 @@ export default function InventoryView() {
             <Table2 size={16} /> Bulk edit
           </button>
           <button className="btn btn-primary" onClick={openAdd}>
-            <Plus size={18} /> Add Product
+            <Plus size={18} /> Add Item
           </button>
         </div>
       </div>
@@ -260,7 +260,7 @@ export default function InventoryView() {
       {showForm && (
         <div className="modal-overlay" onClick={closeForm}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3 className="section-title">{editingId ? 'Edit Product' : 'Add Product'}</h3>
+            <h3 className="section-title">{editingId ? 'Edit Item' : 'Add Room / Service'}</h3>
             <div className="grid grid-cols-2 gap-4">
               <div className="form-group" style={{ gridColumn: 'span 2' }}>
                 <label className="form-label">Product / Service Name *</label>
@@ -340,7 +340,7 @@ export default function InventoryView() {
       {/* Product Table */}
       <div className="glass-panel">
         <div className="table-header" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
-          <h3>Products & Services</h3>
+          <h3>Rooms & Services</h3>
           {!bulkEdit && (
             <TableExport title="Products" filename="Products"
               headers={['Name', 'HSN/SAC', 'Purchase price', 'Selling price', 'GST %', 'Unit', 'Stock']}
@@ -352,9 +352,9 @@ export default function InventoryView() {
         ) : filtered.length === 0 ? (
           <div className="empty-state">
             <Package size={48} />
-            <p>{products.length === 0 ? 'No products yet. Add your first product.' : 'No products match your search.'}</p>
+            <p>{products.length === 0 ? 'No items yet. Add your first room or service.' : 'No items match your search.'}</p>
             {products.length === 0 && (
-              <button className="btn btn-primary" onClick={openAdd}><Plus size={18} /> Add Product</button>
+              <button className="btn btn-primary" onClick={openAdd}><Plus size={18} /> Add Item</button>
             )}
           </div>
         ) : (
