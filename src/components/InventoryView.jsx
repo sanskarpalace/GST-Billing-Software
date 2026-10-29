@@ -15,7 +15,7 @@ import TableExport from './TableExport';
 // still gets a valid number, but the form no longer edits it directly —
 // dead state removed for clarity.
 const emptyForm = {
-  name: '', hsn: '', purchasePrice: '', sellingPrice: '', taxPercent: '', unit: 'Pcs', stock: '', description: '',
+  name: '', hsn: '', purchasePrice: '', sellingPrice: '', taxPercent: '5', unit: 'Day', stock: '', description: '', isService: true,
 };
 
 export default function InventoryView() {
@@ -78,6 +78,7 @@ export default function InventoryView() {
       unit: product.unit || 'Nos',
       stock: product.stock ?? '', // v1.10.74 - was `|| ''`, which blanked a stock of 0
       description: product.description || '',
+      isService: product.isService ?? false,
     });
     setEditingId(product.id);
     setShowForm(true);
@@ -117,7 +118,8 @@ export default function InventoryView() {
         rate: sellingPrice, // mirror for legacy readers
         taxPercent: form.taxPercent ? parseFloat(form.taxPercent) : 0,
         unit: form.unit,
-        stock: form.stock ? parseFloat(form.stock) : 0,
+        stock: form.isService ? 0 : (form.stock ? parseFloat(form.stock) : 0),
+        isService: !!form.isService,
         description: form.description.trim(),
       };
       await saveProduct(product);
@@ -216,8 +218,8 @@ export default function InventoryView() {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div>
-            <h1 className="page-title">Products</h1>
-            <p className="page-subtitle">Manage your products and services catalog</p>
+            <h1 className="page-title">Rooms & Services</h1>
+            <p className="page-subtitle">Your room types, F&B and service catalog</p>
           </div>
           <HelpButton title="Products — how to use" doc="products">
             <ul style={{ paddingLeft: '1.1rem', margin: 0 }}>
@@ -304,10 +306,21 @@ export default function InventoryView() {
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Stock Quantity</label>
-                <input type="number" className="form-input" value={form.stock}
-                  onChange={e => updateField('stock', e.target.value)} placeholder="0" min="0" />
+                <label className="form-label">Type</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', padding: '0.5rem 0' }}>
+                  <input type="checkbox" checked={!!form.isService}
+                    onChange={e => updateField('isService', e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: 'var(--primary)' }} />
+                  <span>This is a <strong>service</strong> (room, F&B, etc.) — no stock tracking</span>
+                </label>
               </div>
+              {!form.isService && (
+                <div className="form-group">
+                  <label className="form-label">Stock Quantity</label>
+                  <input type="number" className="form-input" value={form.stock}
+                    onChange={e => updateField('stock', e.target.value)} placeholder="0" min="0" />
+                </div>
+              )}
               <div className="form-group" style={{ gridColumn: 'span 2' }}>
                 <label className="form-label">Description (optional)</label>
                 <input type="text" className="form-input" value={form.description}
@@ -367,7 +380,9 @@ export default function InventoryView() {
                     <td>{product.taxPercent ? `${product.taxPercent}%` : '-'}</td>
                     <td className="text-muted">{product.unit || 'Nos'}</td>
                     <td>
-                      {(product.stock ?? 0) <= 0 ? (
+                      {product.isService ? (
+                        <span className="text-muted">Service</span>
+                      ) : (product.stock ?? 0) <= 0 ? (
                         <span style={{ color: '#dc2626', fontWeight: 600 }}>Out of Stock</span>
                       ) : (stockAlerts.enabled !== false && (product.stock ?? 0) <= Number(stockAlerts.threshold ?? 5)) ? (
                         <span style={{ color: '#d97706', fontWeight: 600 }}>{product.stock}</span>

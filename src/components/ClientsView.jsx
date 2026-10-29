@@ -756,8 +756,8 @@ export default function ClientsView({ onEdit, onDuplicate, onNew }) {
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div>
-            <h1 className="page-title">Clients</h1>
-            <p className="page-subtitle">Client-wise invoice ledger and outstanding</p>
+            <h1 className="page-title">Guests</h1>
+            <p className="page-subtitle">Guest-wise invoice ledger and outstanding</p>
           </div>
           <HelpButton title="Clients — how to use" doc="clients">
             <ul style={{ paddingLeft: '1.1rem', margin: 0 }}>

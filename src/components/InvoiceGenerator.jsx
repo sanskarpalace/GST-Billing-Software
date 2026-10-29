@@ -1060,9 +1060,15 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
     getAllProfiles().then(p => { setAllProfiles(p); if (!activeProfile && p.length > 0) setActiveProfile(profileProp); }).catch(() => {});
     getTermsTemplates().then(templates => {
       setTermsTemplates(templates);
-      if (templates.length > 0 && blankNewInvoice.current && !selectedTermsId) {
-        setSelectedTermsId(templates[0].id);
-        setCustomTerms(templates[0].content);
+      if (blankNewInvoice.current && !selectedTermsId) {
+        // Hotel edition: default new invoices to the Hotel/Hospitality terms.
+        const hotelPreset = TERMS_PRESETS.find(p => p.id === 'hotel-hospitality');
+        if (hotelPreset) {
+          setCustomTerms(hotelPreset.body);
+        } else if (templates.length > 0) {
+          setSelectedTermsId(templates[0].id);
+          setCustomTerms(templates[0].content);
+        }
       }
     });
     getAllClients().then(clients => {

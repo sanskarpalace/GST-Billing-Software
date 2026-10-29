@@ -443,7 +443,7 @@ export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConve
       setProductCount(prods.length);
       if (cfg?.enabled === false) { setLowStockProducts([]); return; }
       const threshold = Number(cfg?.threshold ?? 5);
-      setLowStockProducts(prods.filter(p => (p.stock ?? 0) <= threshold));
+      setLowStockProducts(prods.filter(p => !p.isService && (p.stock ?? 0) <= threshold));
     });
   }, []);
 

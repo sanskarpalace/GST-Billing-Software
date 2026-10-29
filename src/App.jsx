@@ -222,7 +222,7 @@ function App() {
         const stockThreshold = Number(stockAlertCfg?.threshold ?? 5);
         const lowStock = stockAlertCfg?.enabled === false
           ? []
-          : products.filter(p => (p.stock ?? 999) <= stockThreshold);
+          : products.filter(p => !p.isService && (p.stock ?? 999) <= stockThreshold);
         const filings = getUpcomingFilings().filter(f => f.daysAway <= 10);
         // Recurring auto-fire breadcrumb — set by server.js processDueRecurring().
         // Only "fresh" (today's) auto-fires count as a notification; older ones
@@ -528,8 +528,8 @@ function App() {
   const navItems = [
     { id: 'dashboard', icon: Home, label: 'Dashboard', module: 'dashboard' },
     { id: 'new', icon: Plus, label: 'New Invoice', onClick: handleNewInvoice, module: 'invoicing' },
-    { id: 'clients', icon: Users, label: 'Clients', module: 'clients' },
-    { id: 'inventory', icon: Package, label: 'Products', module: 'inventory' },
+    { id: 'clients', icon: Users, label: 'Guests', module: 'clients' },
+    { id: 'inventory', icon: Package, label: 'Rooms & Services', module: 'inventory' },
     { id: 'expenses', icon: Wallet, label: 'Expenses', module: 'expenses' },
     { id: 'purchases', icon: ShoppingCart, label: 'Purchases', module: 'purchases' },
     { id: 'recurring', icon: RefreshCw, label: 'Recurring', module: 'recurring' },
