@@ -544,6 +544,10 @@ export const INVOICE_TYPES = {
 // the boxes a Tally-style invoice carries. One list drives the editor and
 // every PDF design, so a field can never be typed in but not printed.
 export const ORDER_DETAIL_FIELDS = [
+  { key: 'checkIn', label: 'Check-in date', type: 'date' },
+  { key: 'checkOut', label: 'Check-out date', type: 'date' },
+  { key: 'roomNo', label: 'Room No.', placeholder: 'e.g. 101, 102' },
+  { key: 'guests', label: 'No. of guests', placeholder: 'e.g. 2 adults, 1 child' },
   { key: 'workDetails', label: 'Work details', wide: true, placeholder: 'e.g. Supply and installation of high mast lights, scope as per annexure' },
   { key: 'revisionNo', label: 'Revision No', placeholder: 'e.g. Rev-1' },
   { key: 'vehicleNo', label: 'Vehicle No', placeholder: 'e.g. TS09AB1234' },

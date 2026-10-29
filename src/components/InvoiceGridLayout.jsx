@@ -222,7 +222,20 @@ function TallyLayout({ ctx }) {
     ['Dispatch Doc No.', orderMap.dispatchDocNo, 'Delivery Note Date', orderMap.deliveryNoteDate],
     ['Dispatched through', orderMap.dispatchedThrough, 'Destination', orderMap.destination],
   ];
+  const nightsBetween = (a, b) => {
+    if (!a || !b) return '';
+    const d1 = new Date(a), d2 = new Date(b);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return '';
+    const n = Math.round((d2 - d1) / 86400000);
+    return n > 0 ? String(n) : '';
+  };
+  const stayNights = nightsBetween(details?.checkIn, details?.checkOut);
   const extraRef = [
+    orderMap.checkIn && ['Check-in', orderMap.checkIn],
+    orderMap.checkOut && ['Check-out', orderMap.checkOut],
+    stayNights && ['No. of Nights', stayNights],
+    orderMap.roomNo && ['Room No.', orderMap.roomNo],
+    orderMap.guests && ['Guests', orderMap.guests],
     orderMap.vehicleNo && ['Vehicle No.', orderMap.vehicleNo],
     orderMap.revisionNo && ['Revision No.', orderMap.revisionNo],
     (orderMap.periodFrom || orderMap.periodTo) && ['Service Period', [orderMap.periodFrom, orderMap.periodTo].filter(Boolean).join(' to ')],

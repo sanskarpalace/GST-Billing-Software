@@ -4344,8 +4344,8 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
                   <details className="form-group full-width" open={filled > 0 || undefined}
                     style={{ padding: '0.6rem 0.85rem', background: 'var(--bg-secondary)', borderRadius: 6 }}>
                     <summary style={{ cursor: 'pointer', fontSize: '0.88rem', userSelect: 'none' }}>
-                      <strong>Order, dispatch &amp; reference details</strong>
-                      <span style={{ color: 'var(--text-muted)' }}> (optional{filled ? `, ${filled} filled` : ''}) - buyer's order no, vehicle no, service period, work details</span>
+                      <strong>Stay &amp; invoice details</strong>
+                      <span style={{ color: 'var(--text-muted)' }}> (optional{filled ? `, ${filled} filled` : ''}) - check-in / check-out, room no, guests, references</span>
                     </summary>
                     <div className="grid grid-cols-2 gap-3" style={{ marginTop: '0.6rem' }}>
                       {ORDER_DETAIL_FIELDS.map(f => (
