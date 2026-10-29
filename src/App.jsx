@@ -835,9 +835,9 @@ function App() {
       {navOpen && <div className="sidebar-backdrop" onClick={() => setNavOpen(false)} aria-hidden="true" />}
       <div className={`sidebar${navOpen ? ' sidebar-open' : ''}`} onClick={closeNavAfterPick}>
         <div className="sidebar-brand">
-          <div className="sidebar-logo">
+          <div className="sidebar-logo" style={profile?.logo ? { background: 'none', padding: 0, overflow: 'hidden' } : undefined}>
             {profile?.logo
-              ? <img src={profile.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: 'inherit' }} />
+              ? <img src={profile.logo} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit', display: 'block' }} />
               : <FileText size={22} />}
           </div>
           <div>
