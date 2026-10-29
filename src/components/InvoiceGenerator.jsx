@@ -1063,7 +1063,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
       if (blankNewInvoice.current && !selectedTermsId && !customTerms) {
         // Hotel edition: default to a single jurisdiction line only. The full
         // Hotel/Hospitality preset is still available from the Terms dropdown.
-        setCustomTerms('Subject to Shamgarh (M.P.) jurisdiction only.');
+        setCustomTerms('Subject to Garoth (M.P.) jurisdiction only.');
       }
     });
     getAllClients().then(clients => {
