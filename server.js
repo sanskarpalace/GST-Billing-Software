@@ -1708,6 +1708,26 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// GSTIN -> registered name lookup (optional; needs GSTIN_API_KEY env).
+// Mirrors the Vercel deployment's endpoint so the feature works locally too.
+const GSTIN_LOOKUP_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+app.get('/api/gstin-lookup', async (req, res) => {
+  const gstin = String(req.query.gstin || '').trim().toUpperCase();
+  if (!GSTIN_LOOKUP_RE.test(gstin)) return res.status(400).json({ ok: false, error: 'invalid-gstin' });
+  const key = process.env.GSTIN_API_KEY;
+  if (!key) return res.json({ ok: false, error: 'not-configured' });
+  try {
+    const url = `https://appyflow.in/api/verifyGST?gstNo=${encodeURIComponent(gstin)}&key_secret=${encodeURIComponent(key)}`;
+    const r = await fetch(url);
+    const data = await r.json();
+    const info = data?.taxpayerInfo;
+    if (!info || data?.error) return res.json({ ok: false, error: String(data?.message || 'not-found') });
+    res.json({ ok: true, legalName: info.lgnm || '', tradeName: info.tradeNam || '', address: info?.pradr?.adr || '', status: info.sts || '' });
+  } catch {
+    res.json({ ok: false, error: 'lookup-failed' });
+  }
+});
+
 app.get('{*path}', (req, res) => {
   if (req.path.startsWith('/api')) return res.status(404).json({ error: 'No such endpoint' });
   if (fs.existsSync(indexPath)) {

@@ -250,6 +250,15 @@ export const deleteClient = async (id) => {
   return apiFetch(`${API}/clients/${encodeURIComponent(id)}`, { method: 'DELETE' });
 };
 
+// ---- GSTIN → registered name lookup ----
+// Best-effort. Resolves to { ok, legalName, tradeName, address } when the
+// server has a GSTIN_API_KEY configured, else { ok:false, error }. Callers
+// should treat any non-ok result (or a throw) as "feature unavailable" and
+// fall back to manual name entry.
+export const lookupGstin = async (gstin) => {
+  return apiFetch(`${API}/gstin-lookup?gstin=${encodeURIComponent(gstin)}`);
+};
+
 // ---- Terms Templates ----
 export const getTermsTemplates = async () => {
   return apiFetch(`${API}/templates`);

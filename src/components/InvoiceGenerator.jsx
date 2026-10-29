@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { ArrowLeft, Plus, Trash2, Download, UserPlus, Pencil, Settings, ChevronUp, ChevronDown, MessageCircle, Check, Loader, Truck, Printer, Eye, EyeOff } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
-import { saveBill, deleteBill, applyStockChanges, getNextInvoiceNumber, getTermsTemplates, getAllClients, saveClient, getProfile, getAllProducts, getInvoiceDisplayOptions, saveInvoiceDisplayOptions, getAllProfiles, getRegionMode, saveRecurring, getAllRecurring, getAllBills } from '../store';
+import { saveBill, deleteBill, applyStockChanges, getNextInvoiceNumber, getTermsTemplates, getAllClients, saveClient, getProfile, getAllProducts, getInvoiceDisplayOptions, saveInvoiceDisplayOptions, getAllProfiles, getRegionMode, saveRecurring, getAllRecurring, getAllBills, lookupGstin } from '../store';
 import { INVOICE_TYPES, businessKeyOf, GST_DOC_NUMBER, COUNTRIES, printedSubtotal, deliveryChargeLine, stockEffect, appliedStock, stockDelta, generateEWayBillJSON, formatCurrency, getCountryConfig, getStatesForCountry, getAllUnits, addCustomUnit, removeCustomUnit, getCountriesForRegion, TDS_SECTIONS, TCS_SECTIONS, REMOVED_TCS_SECTIONS, TERMS_PRESETS, getActiveAccounts, getDefaultAccount, getAccountById, getDefaultUnitForMode, filterUnitsByMode, PAPER_SIZES, getPaperSize, computeInvoiceTotals, clientYearToDate, htmlHasText, ORDER_DETAIL_FIELDS, invoiceOptionOn, DEFAULT_DECLARATION, decodeGstin, safePageBoundaries, localToday, toLocalIsoDate, parseLocalDate, paymentStatusFor } from '../utils';
 import { getPrintSettings, savePrintSettings } from '../utils/printSettings';
 import { openWhatsAppShare } from '../utils/share';
@@ -1274,7 +1274,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
   // or internet. The state decides place of supply: get it wrong and the
   // invoice charges CGST + SGST where it owes IGST, or the other way round.
   const [gstinHint, setGstinHint] = useState(null);
-  const handleClientGstinBlur = () => {
+  const handleClientGstinBlur = async () => {
     const decoded = decodeGstin(client.gstin);
     if (!decoded) { setGstinHint(null); return; }
     if (!decoded.checksumOk) {
@@ -1290,6 +1290,27 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
     } else {
       setGstinHint({ tone: 'ok', message: `Registered in ${decoded.state}.` });
     }
+
+    // Optional online lookup of the registered name (needs GSTIN_API_KEY on the
+    // server). Best-effort: fills the name only when it's empty so we never
+    // clobber what the user typed; otherwise just shows who the GSTIN belongs
+    // to. Any failure (feature off, no internet, not found) is swallowed.
+    try {
+      const res = await lookupGstin(client.gstin);
+      if (res?.ok && (res.legalName || res.tradeName)) {
+        const name = res.legalName || res.tradeName;
+        if (!client.name?.trim()) {
+          setClient(prev => ({
+            ...prev,
+            name,
+            address: prev.address?.trim() ? prev.address : (res.address || prev.address),
+          }));
+          setGstinHint({ tone: 'ok', message: `Registered to ${name} — name filled in.` });
+        } else {
+          setGstinHint({ tone: 'ok', message: `Registered to ${name}.` });
+        }
+      }
+    } catch { /* lookup unavailable — keep manual entry */ }
   };
 
   const handleTypeChange = async (type) => {

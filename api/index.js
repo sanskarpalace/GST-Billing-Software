@@ -572,6 +572,37 @@ app.get('/api/health', h(async (req, res) => {
   });
 }));
 
+// ===========================================================================
+// GSTIN → registered name lookup (optional; needs GSTIN_API_KEY).
+// Calls the Appyflow GST verification API. Returns the registered legal /
+// trade name so the invoice form can auto-fill the client name. With no key
+// configured it reports { ok:false, error:'not-configured' } and the UI just
+// keeps the manual-entry behaviour.
+// ===========================================================================
+const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
+app.get('/api/gstin-lookup', h(async (req, res) => {
+  const gstin = String(req.query.gstin || '').trim().toUpperCase();
+  if (!GSTIN_RE.test(gstin)) return res.status(400).json({ ok: false, error: 'invalid-gstin' });
+  const key = process.env.GSTIN_API_KEY;
+  if (!key) return res.json({ ok: false, error: 'not-configured' });
+  try {
+    const url = `https://appyflow.in/api/verifyGST?gstNo=${encodeURIComponent(gstin)}&key_secret=${encodeURIComponent(key)}`;
+    const r = await fetch(url);
+    const data = await r.json();
+    const info = data?.taxpayerInfo;
+    if (!info || data?.error) return res.json({ ok: false, error: String(data?.message || 'not-found') });
+    res.json({
+      ok: true,
+      legalName: info.lgnm || '',
+      tradeName: info.tradeNam || '',
+      address: info?.pradr?.adr || '',
+      status: info.sts || '',
+    });
+  } catch {
+    res.json({ ok: false, error: 'lookup-failed' });
+  }
+}));
+
 // Unknown /api/* → JSON 404 (don't fall through to the SPA).
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found', code: 'not-found' }));
 

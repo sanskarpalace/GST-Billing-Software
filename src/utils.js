@@ -2018,6 +2018,29 @@ export const TERMS_PRESETS = [
 </ul>`,
   },
   {
+    id: 'hotel-hospitality',
+    label: 'Hotel / Hospitality / Lodging',
+    region: 'IN',
+    body: `<p><strong>Check-in / Check-out</strong></p>
+<ul>
+  <li>Standard check-in <strong>12:00 PM</strong>, check-out <strong>11:00 AM</strong>. Early check-in or late check-out is subject to availability and may be charged.</li>
+  <li>A valid government photo ID is mandatory for every guest at check-in.</li>
+</ul>
+<p><strong>Tariff &amp; GST</strong></p>
+<ul>
+  <li>Room tariff is charged per night. GST is applied on the declared tariff at the prevailing government rate.</li>
+  <li>Applicable taxes and any service charges are shown separately on this invoice.</li>
+</ul>
+<p><strong>Payment, Cancellation &amp; Deposit</strong></p>
+<ul>
+  <li>Full payment is due at check-out. We accept cash, card and UPI.</li>
+  <li>Cancellation / no-show charges apply as per the confirmed booking policy.</li>
+  <li>A refundable security deposit may be collected at check-in against incidentals and damages.</li>
+  <li>Guests are liable for any loss of or damage to hotel property during the stay.</li>
+</ul>
+<p>Subject to <em>[your city]</em> jurisdiction.</p>`,
+  },
+  {
     id: 'it-saas',
     label: 'IT / Software Services',
     region: 'IN',
