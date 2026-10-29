@@ -199,6 +199,9 @@ app.get('/api/bookings', h(async (req, res) => {
 app.post('/api/bookings', h(async (req, res) => {
   const item = req.body || {};
   if (!item.id) item.id = `bkg_${Date.now()}`;
+  if (!item.checkIn || !item.checkOut || item.checkOut < item.checkIn || (item.kind !== 'block' && item.checkOut === item.checkIn)) {
+    return res.status(400).json({ error: 'Invalid dates', code: 'bad-request' });
+  }
   const force = req.query.force === '1' || req.query.force === 'true';
   if (!force) {
     const conflicts = findBookingConflicts(await readAll('bookings'), item);

@@ -92,7 +92,10 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   };
 
   // ---- actions ----
-  const persistBooking = async (b) => { try { await saveBooking(b); await load(); return true; } catch { toast('Save failed', 'error'); return false; } };
+  // Status transitions (check-in / check-out / cancel) on an existing booking
+  // must never be blocked by conflict validation — they don't create new
+  // overlaps — so they always force.
+  const persistBooking = async (b) => { try { await saveBooking(b, { force: true }); await load(); return true; } catch { toast('Save failed', 'error'); return false; } };
 
   const doCheckIn = async (b) => { if (await persistBooking({ ...b, status: 'checked-in', checkedInAt: new Date().toISOString() })) toast(`${b.guestName || 'Guest'} checked in`, 'success'); };
 
