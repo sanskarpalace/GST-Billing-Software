@@ -1883,7 +1883,7 @@ export const FEATURE_GROUPS = [
     description: 'Vendor bills, expense tracking, ITC',
     modules: [
       { id: 'expenses',  label: 'Expense tracker', nav: 'expenses',  defaultOn: true },
-      { id: 'purchases', label: 'Purchase bills',  nav: 'purchases', defaultOn: true },
+      { id: 'purchases', label: 'Purchase bills',  nav: 'purchases', defaultOn: false },
       { id: 'gstr2b',    label: 'GSTR-2B reconciliation (purchase ITC matching)', nav: null, defaultOn: true, indiaOnly: true },
     ],
   },
