@@ -13,6 +13,12 @@ dist-ssr
 release-build
 *.local
 
+# Secrets — never commit real connection strings or passwords
+.env
+.env.*
+!.env.example
+.vercel
+
 # Invoice data (personal/financial - keep local only)
 data/
 Saved Invoices/
