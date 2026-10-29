@@ -563,8 +563,13 @@ app.post('/api/control-panel/launch-script', (req, res) => res.json({ ok: false,
 // ===========================================================================
 app.get('/api/health', h(async (req, res) => {
   let dbOk = true;
-  try { await readMeta({}); } catch { dbOk = false; }
-  res.json({ ok: dbOk, mode: 'online', version: process.env.APP_VERSION || 'online' });
+  let error = null;
+  try { await readMeta({}); } catch (err) { dbOk = false; error = String(err?.message || err); }
+  res.json({
+    ok: dbOk, mode: 'online', version: process.env.APP_VERSION || 'online',
+    hasDbUrl: !!process.env.DATABASE_URL,
+    ...(error ? { error } : {}),
+  });
 }));
 
 // Unknown /api/* → JSON 404 (don't fall through to the SPA).

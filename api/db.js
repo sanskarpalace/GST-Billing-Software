@@ -22,12 +22,23 @@
 
 import { neon } from '@neondatabase/serverless';
 
-if (!process.env.DATABASE_URL) {
-  // Fail loud at cold start rather than returning confusing 500s per request.
-  throw new Error('DATABASE_URL is not set. Add your Neon connection string as an environment variable.');
+// Lazy client. We DON'T throw at import time — a module-level throw turns a
+// missing env var into an opaque FUNCTION_INVOCATION_FAILED for the whole
+// function. Instead the first query throws a clear error that /api/health
+// surfaces as JSON, so misconfiguration is diagnosable from the browser.
+let _sql = null;
+function getSql() {
+  if (_sql) return _sql;
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is not set. Add your Neon connection string in Vercel → Project → Settings → Environment Variables, then redeploy.');
+  }
+  _sql = neon(process.env.DATABASE_URL);
+  return _sql;
 }
 
-const sql = neon(process.env.DATABASE_URL);
+// Tagged-template proxy so existing `sql\`...\`` call sites keep working while
+// the real client is created lazily on first use.
+const sql = (strings, ...values) => getSql()(strings, ...values);
 
 // ---- Collection CRUD (mirrors readAllFromDir / readJSON / writeJSON / deleteFile) ----
 
