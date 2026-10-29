@@ -261,8 +261,9 @@ export const deleteRoom = async (id) => apiFetch(`${API}/rooms/${encodeURICompon
 
 // ---- Front Desk: Bookings (stays, reservations, event blocks) ----
 export const getAllBookings = async () => apiFetch(`${API}/bookings`);
-export const saveBooking = async (b) => {
-  const res = await apiFetch(`${API}/bookings`, { method: 'POST', body: JSON.stringify(b) });
+// Pass { force: true } to override a server-side booking conflict (409).
+export const saveBooking = async (b, { force = false } = {}) => {
+  const res = await apiFetch(`${API}/bookings${force ? '?force=1' : ''}`, { method: 'POST', body: JSON.stringify(b) });
   if (res.id) b.id = res.id;
   return b;
 };

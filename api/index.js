@@ -19,7 +19,7 @@ import express from 'express';
 import crypto from 'crypto';
 import {
   nextCounterValue, startFor, numberSeriesFor, counterKeyFor, formatDocNumber,
-  businessKeyOf, getFinancialYearLabel, INVOICE_TYPES, templateTotals, clientYearToDate,
+  businessKeyOf, getFinancialYearLabel, INVOICE_TYPES, templateTotals, clientYearToDate, findBookingConflicts,
 } from '../src/utils.js';
 import {
   readAll, readOne, exists, writeOne, deleteOne, moveOne,
@@ -187,7 +187,32 @@ crud('purchases','purchases','pur',  byDateDesc);
 crud('profiles', 'profiles', 'biz',  (a, b) => (a.businessName || '').localeCompare(b.businessName || ''));
 // Front Desk (hotel) collections.
 crud('rooms',    'rooms',    'room', (a, b) => String(a.number || '').localeCompare(String(b.number || ''), undefined, { numeric: true }));
-crud('bookings', 'bookings', 'bkg',  (a, b) => String(a.checkIn || '').localeCompare(String(b.checkIn || '')));
+
+// Bookings: custom POST with server-side conflict validation so two devices
+// can't double-book the same room. Pass ?force=1 to override deliberately
+// (e.g. an event ended early and a room is genuinely free for a late walk-in).
+app.get('/api/bookings', h(async (req, res) => {
+  const items = await readAll('bookings');
+  items.sort((a, b) => String(a.checkIn || '').localeCompare(String(b.checkIn || '')));
+  res.json(items);
+}));
+app.post('/api/bookings', h(async (req, res) => {
+  const item = req.body || {};
+  if (!item.id) item.id = `bkg_${Date.now()}`;
+  const force = req.query.force === '1' || req.query.force === 'true';
+  if (!force) {
+    const conflicts = findBookingConflicts(await readAll('bookings'), item);
+    if (conflicts.length) {
+      return res.status(409).json({
+        error: 'booking-conflict', code: 'conflict',
+        conflicts: conflicts.map((c) => ({ id: c.id, kind: c.kind, guestName: c.guestName || null, eventName: c.eventName || null, roomIds: c.roomIds || [], checkIn: c.checkIn, checkOut: c.checkOut })),
+      });
+    }
+  }
+  await writeOne('bookings', item.id, item);
+  res.json({ success: true, id: item.id });
+}));
+app.delete('/api/bookings/:id', h(async (req, res) => { await deleteOne('bookings', req.params.id); res.json({ success: true }); }));
 
 // ===========================================================================
 // TERMS TEMPLATES (special: seeds a default when empty)

@@ -543,6 +543,28 @@ export const INVOICE_TYPES = {
 // v1.10.73 - optional order / dispatch / reference details on an invoice,
 // the boxes a Tally-style invoice carries. One list drives the editor and
 // every PDF design, so a field can never be typed in but not printed.
+// ===== Front Desk booking conflicts (day-level) =====
+// A stay occupies [checkIn, checkOut) — the checkout day is free. An event
+// block occupies [checkIn, checkOut] inclusive. Two bookings conflict when they
+// share a room and their occupied days overlap. Used by the API to reject
+// double-bookings (server-authoritative) and reusable on the client.
+export const findBookingConflicts = (existing, candidate) => {
+  const addDay = (iso) => {
+    const d = new Date(String(iso) + 'T00:00:00');
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const interval = (b) => [b.checkIn, b.kind === 'block' ? addDay(b.checkOut) : b.checkOut];
+  const active = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
+  if (!candidate || !candidate.checkIn || !candidate.checkOut) return [];
+  const [cs, ce] = interval(candidate);
+  const wanted = new Set(candidate.roomIds || []);
+  return (existing || [])
+    .filter((x) => active(x) && x.id !== candidate.id && (x.roomIds || []).some((r) => wanted.has(r)))
+    .filter((x) => { const [xs, xe] = interval(x); return cs < xe && xs < ce; });
+};
+
 export const ORDER_DETAIL_FIELDS = [
   { key: 'checkIn', label: 'Check-in date', type: 'date' },
   { key: 'checkOut', label: 'Check-out date', type: 'date' },

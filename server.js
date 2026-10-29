@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 // invoice-level discount, and round-off. Previously the recurring auto-fire
 // re-implemented totals inline and silently reintroduced every bug the
 // v1.10.1 extraction fixed. Same source of truth now.
-import { templateTotals, clientYearToDate, nextCounterValue, startFor, numberSeriesFor, counterKeyFor, formatDocNumber, businessKeyOf, getFinancialYearLabel, INVOICE_TYPES } from './src/utils.js';
+import { templateTotals, clientYearToDate, nextCounterValue, startFor, numberSeriesFor, counterKeyFor, formatDocNumber, businessKeyOf, getFinancialYearLabel, INVOICE_TYPES, findBookingConflicts } from './src/utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, 'data');
@@ -555,6 +555,11 @@ app.get('/api/bookings', (req, res) => {
 });
 app.post('/api/bookings', (req, res) => {
   const bkg = req.body; if (!bkg.id) bkg.id = 'bkg_' + Date.now();
+  const force = req.query.force === '1' || req.query.force === 'true';
+  if (!force) {
+    const conflicts = findBookingConflicts(readAllFromDir('bookings'), bkg);
+    if (conflicts.length) return res.status(409).json({ error: 'booking-conflict', code: 'conflict', conflicts });
+  }
   writeJSON(path.join(DATA_DIR, 'bookings', safeFileName(bkg.id) + '.json'), bkg);
   res.json({ success: true, id: bkg.id });
 });

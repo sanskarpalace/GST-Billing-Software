@@ -28,14 +28,6 @@ const coversDay = (b, day) => {
   if (b.kind === 'block') return b.checkIn <= day && day <= b.checkOut;
   return b.checkIn <= day && day < b.checkOut;
 };
-// Occupied interval of a booking as half-open [start, endExclusive): a stay
-// frees the checkout day, while an event block includes both ends (so +1 day).
-const occInterval = (b) => [b.checkIn, b.kind === 'block' ? isoAddDays(b.checkOut, 1) : b.checkOut];
-// Active bookings on `roomId` whose occupied days overlap the half-open range
-// [start, endExclusive), excluding `selfId`. Used to hard-block double-booking.
-const conflictsForRoom = (allBookings, roomId, start, endExclusive, selfId) =>
-  (allBookings || []).filter((x) => isActive(x) && x.id !== selfId && (x.roomIds || []).includes(roomId))
-    .filter((x) => { const [xs, xe] = occInterval(x); return start < xe && xs < endExclusive; });
 const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
 
 const STATUS = {
@@ -44,6 +36,28 @@ const STATUS = {
   reserved: { label: 'Reserved', color: '#d97706', bg: 'rgba(217,119,6,0.10)' },
   blocked:  { label: 'Blocked',  color: '#7c3aed', bg: 'rgba(124,58,237,0.10)' },
 };
+
+// Save a booking; if the server rejects it as a conflict (409), offer the
+// operator a deliberate override (e.g. an event ended early and the room is
+// genuinely free for a late walk-in). Returns true if saved.
+async function saveWithOverride(booking) {
+  try {
+    await saveBooking(booking);
+    return true;
+  } catch (e) {
+    if (e && e.status === 409) {
+      const c = (e.body && e.body.conflicts && e.body.conflicts[0]) || null;
+      const who = c ? (c.kind === 'block' ? `event "${c.eventName || ''}"` : `guest ${c.guestName || ''}`) : 'another booking';
+      const when = c ? ` (${fmtDate(c.checkIn)}–${fmtDate(c.checkOut)})` : '';
+      if (window.confirm(`A room here is already booked/blocked by ${who}${when}.\n\nThis is usually a double-booking. Override and save anyway? (e.g. the event ended early or the room was freed)`)) {
+        await saveBooking(booking, { force: true });
+        return true;
+      }
+      return false;
+    }
+    throw e;
+  }
+}
 
 export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const [rooms, setRooms] = useState([]);
@@ -427,24 +441,19 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
     if (!form.guestName.trim()) { toast('Guest name is required', 'warning'); return; }
     if (!form.roomId) { toast('Pick a room', 'warning'); return; }
     if (nights <= 0) { toast('Check-out must be after check-in', 'warning'); return; }
-    // Hard conflict check against every active stay AND event block on the room.
-    const conflicts = conflictsForRoom(bookings, form.roomId, form.checkIn, form.checkOut, b.id);
-    if (conflicts.length) {
-      const c = conflicts[0];
-      toast(`That room is already ${c.kind === 'block' ? `blocked for "${c.eventName || 'an event'}"` : `booked for ${c.guestName || 'a guest'}`} (${fmtDate(c.checkIn)}–${fmtDate(c.checkOut)}). Pick other dates or another room.`, 'error');
-      return;
-    }
+    const bookingObj = {
+      ...b, kind: 'stay', status: reserve ? 'reserved' : 'checked-in',
+      roomIds: [form.roomId], guestName: form.guestName.trim(), guestPhone: form.guestPhone.trim(),
+      companyName: form.companyName.trim(), guestGstin: form.guestGstin.trim().toUpperCase(), address: form.address.trim(),
+      checkIn: form.checkIn, checkOut: form.checkOut,
+      ratePerNight: form.ratePerNight === '' ? 0 : parseFloat(form.ratePerNight),
+      guests: form.guests.trim(), advance: form.advance === '' ? 0 : parseFloat(form.advance), notes: form.notes.trim(),
+      ...(reserve ? {} : { checkedInAt: b.checkedInAt || new Date().toISOString() }),
+    };
     setSaving(true);
     try {
-      await saveBooking({
-        ...b, kind: 'stay', status: reserve ? 'reserved' : 'checked-in',
-        roomIds: [form.roomId], guestName: form.guestName.trim(), guestPhone: form.guestPhone.trim(),
-        companyName: form.companyName.trim(), guestGstin: form.guestGstin.trim().toUpperCase(), address: form.address.trim(),
-        checkIn: form.checkIn, checkOut: form.checkOut,
-        ratePerNight: form.ratePerNight === '' ? 0 : parseFloat(form.ratePerNight),
-        guests: form.guests.trim(), advance: form.advance === '' ? 0 : parseFloat(form.advance), notes: form.notes.trim(),
-        ...(reserve ? {} : { checkedInAt: b.checkedInAt || new Date().toISOString() }),
-      });
+      const ok = await saveWithOverride(bookingObj);
+      if (!ok) { setSaving(false); return; }
       // Grow the guest directory so repeat guests autocomplete next time.
       const known = clients.some((c) => (c.name || '').trim().toLowerCase() === form.guestName.trim().toLowerCase());
       if (!known) {
@@ -517,22 +526,10 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], onClose, onSav
     if (!form.eventName.trim()) { toast('Event name is required', 'warning'); return; }
     if (selected.size === 0) { toast('Select at least one room', 'warning'); return; }
     if (!form.checkIn || !form.checkOut || form.checkOut < form.checkIn) { toast('Pick a valid date range', 'warning'); return; }
-    // Hard conflict check: none of the selected rooms may already be booked or
-    // blocked during the event (a block is inclusive, so end + 1 day).
-    const endEx = isoAddDays(form.checkOut, 1);
-    const clashes = [];
-    for (const roomId of selected) {
-      const cf = conflictsForRoom(bookings, roomId, form.checkIn, endEx, null);
-      if (cf.length) {
-        const num = rooms.find((r) => r.id === roomId)?.number || '?';
-        const c = cf[0];
-        clashes.push(`${num} (${c.kind === 'block' ? (c.eventName || 'event') : (c.guestName || 'guest')})`);
-      }
-    }
-    if (clashes.length) { toast(`Already booked/blocked on these dates — ${clashes.join(', ')}. Remove them or change dates.`, 'error'); return; }
     setSaving(true);
     try {
-      await saveBooking({ kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
+      const ok = await saveWithOverride({ kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
+      if (!ok) { setSaving(false); return; }
       toast(`Blocked ${selected.size} room${selected.size > 1 ? 's' : ''} for ${form.eventName.trim()}`, 'success'); onSaved();
     } catch { toast('Save failed', 'error'); setSaving(false); }
   };
