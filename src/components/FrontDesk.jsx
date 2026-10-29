@@ -69,9 +69,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
   const doCheckIn = async (b) => { if (await persistBooking({ ...b, status: 'checked-in', checkedInAt: new Date().toISOString() })) toast(`${b.guestName || 'Guest'} checked in`, 'success'); };
 
-  const doCheckOutAndBill = async (b) => {
-    const ok = await persistBooking({ ...b, status: 'checked-out', checkedOutAt: new Date().toISOString() });
-    if (!ok) return;
+  // Build the pre-filled GST invoice for a stay (used by checkout-and-bill and
+  // by the "Bill" action in History for an already-checked-out stay).
+  const billFromBooking = (b) => {
     const nights = nightsBetween(b.checkIn, b.checkOut) || 1;
     const roomNos = (b.roomIds || []).map((id) => roomById(id)?.number).filter(Boolean).join(', ');
     const items = (b.roomIds || []).map((id, i) => {
@@ -95,6 +95,11 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
         invoiceType: 'tax-invoice',
       },
     });
+  };
+
+  const doCheckOutAndBill = async (b) => {
+    if (!(await persistBooking({ ...b, status: 'checked-out', checkedOutAt: new Date().toISOString() }))) return;
+    billFromBooking(b);
   };
 
   const doCheckOutOnly = async (b) => { if (await persistBooking({ ...b, status: 'checked-out', checkedOutAt: new Date().toISOString() })) toast('Checked out', 'success'); };
@@ -286,7 +291,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
           {history.length === 0 ? (
             <div className="empty-state"><CalendarDays size={48} /><p>No past stays yet. Checked-out guests will appear here.</p></div>
           ) : (
-            <div className="table-scroll"><table className="data-table"><thead><tr><th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Status</th></tr></thead>
+            <div className="table-scroll"><table className="data-table"><thead><tr><th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Status</th><th className="col-center">Bill</th></tr></thead>
               <tbody>{history.map((b) => (
                 <tr key={b.id}>
                   <td className="font-medium">{b.guestName || '—'}{b.guestPhone ? <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{b.guestPhone}</div> : null}</td>
@@ -295,6 +300,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                   <td>{fmtDate(b.checkOut)}</td>
                   <td>{nightsBetween(b.checkIn, b.checkOut)}</td>
                   <td><span style={{ fontWeight: 600, fontSize: '0.8rem', color: b.status === 'cancelled' ? 'var(--text-muted)' : STATUS.occupied.color }}>{b.status === 'cancelled' ? 'Cancelled' : 'Checked out'}</span></td>
+                  <td style={{ textAlign: 'center' }}>{b.status === 'checked-out' && (
+                    <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => billFromBooking(b)} title="Generate the GST invoice for this stay"><ReceiptText size={13} /> Bill</button>
+                  )}</td>
                 </tr>
               ))}</tbody></table></div>
           )}
