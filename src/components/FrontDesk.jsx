@@ -28,7 +28,14 @@ const coversDay = (b, day) => {
   if (b.kind === 'block') return b.checkIn <= day && day <= b.checkOut;
   return b.checkIn <= day && day < b.checkOut;
 };
-const rangesOverlap = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
+// Occupied interval of a booking as half-open [start, endExclusive): a stay
+// frees the checkout day, while an event block includes both ends (so +1 day).
+const occInterval = (b) => [b.checkIn, b.kind === 'block' ? isoAddDays(b.checkOut, 1) : b.checkOut];
+// Active bookings on `roomId` whose occupied days overlap the half-open range
+// [start, endExclusive), excluding `selfId`. Used to hard-block double-booking.
+const conflictsForRoom = (allBookings, roomId, start, endExclusive, selfId) =>
+  (allBookings || []).filter((x) => isActive(x) && x.id !== selfId && (x.roomIds || []).includes(roomId))
+    .filter((x) => { const [xs, xe] = occInterval(x); return start < xe && xs < endExclusive; });
 const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
 
 const STATUS = {
@@ -124,7 +131,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   };
 
   const removeRoom = async (room) => {
-    if (!window.confirm(`Delete room ${room.number}? Existing bookings are not affected.`)) return;
+    const active = bookings.filter((b) => isActive(b) && (b.roomIds || []).includes(room.id));
+    if (active.length) { toast(`Can't delete ${room.number} — it has ${active.length} active booking/block. Check out or cancel them first.`, 'error'); return; }
+    if (!window.confirm(`Delete room ${room.number}?`)) return;
     try { await deleteRoom(room.id); await load(); toast('Room deleted', 'info'); } catch { toast('Delete failed', 'error'); }
   };
 
@@ -340,7 +349,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
-      {blockModal && <BlockModal rooms={rooms} initialSelected={(blockModal && blockModal.preselect) || []} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
+      {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
     </div>
   );
 }
@@ -418,9 +427,13 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
     if (!form.guestName.trim()) { toast('Guest name is required', 'warning'); return; }
     if (!form.roomId) { toast('Pick a room', 'warning'); return; }
     if (nights <= 0) { toast('Check-out must be after check-in', 'warning'); return; }
-    // soft conflict warning
-    const clash = bookings.find((x) => isActive(x) && x.id !== b.id && (x.roomIds || []).includes(form.roomId) && rangesOverlap(form.checkIn, form.checkOut, x.checkIn, x.checkOut));
-    if (clash && !window.confirm(`That room already has ${clash.kind === 'block' ? 'an event block' : (clash.guestName || 'a booking')} overlapping these dates. Book anyway?`)) return;
+    // Hard conflict check against every active stay AND event block on the room.
+    const conflicts = conflictsForRoom(bookings, form.roomId, form.checkIn, form.checkOut, b.id);
+    if (conflicts.length) {
+      const c = conflicts[0];
+      toast(`That room is already ${c.kind === 'block' ? `blocked for "${c.eventName || 'an event'}"` : `booked for ${c.guestName || 'a guest'}`} (${fmtDate(c.checkIn)}–${fmtDate(c.checkOut)}). Pick other dates or another room.`, 'error');
+      return;
+    }
     setSaving(true);
     try {
       await saveBooking({
@@ -490,7 +503,7 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
 }
 
 // ---------------- Event-block modal (bulk) ----------------
-function BlockModal({ rooms, initialSelected = [], onClose, onSaved }) {
+function BlockModal({ rooms, bookings = [], initialSelected = [], onClose, onSaved }) {
   const today = localToday();
   const [form, setForm] = useState({ eventName: '', checkIn: today, checkOut: isoAddDays(today, 1), notes: '' });
   const [selected, setSelected] = useState(() => new Set(initialSelected));
@@ -504,6 +517,19 @@ function BlockModal({ rooms, initialSelected = [], onClose, onSaved }) {
     if (!form.eventName.trim()) { toast('Event name is required', 'warning'); return; }
     if (selected.size === 0) { toast('Select at least one room', 'warning'); return; }
     if (!form.checkIn || !form.checkOut || form.checkOut < form.checkIn) { toast('Pick a valid date range', 'warning'); return; }
+    // Hard conflict check: none of the selected rooms may already be booked or
+    // blocked during the event (a block is inclusive, so end + 1 day).
+    const endEx = isoAddDays(form.checkOut, 1);
+    const clashes = [];
+    for (const roomId of selected) {
+      const cf = conflictsForRoom(bookings, roomId, form.checkIn, endEx, null);
+      if (cf.length) {
+        const num = rooms.find((r) => r.id === roomId)?.number || '?';
+        const c = cf[0];
+        clashes.push(`${num} (${c.kind === 'block' ? (c.eventName || 'event') : (c.guestName || 'guest')})`);
+      }
+    }
+    if (clashes.length) { toast(`Already booked/blocked on these dates — ${clashes.join(', ')}. Remove them or change dates.`, 'error'); return; }
     setSaving(true);
     try {
       await saveBooking({ kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
