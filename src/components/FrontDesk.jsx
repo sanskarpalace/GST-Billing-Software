@@ -93,6 +93,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
         items,
         details: { checkIn: b.checkIn, checkOut: b.checkOut, roomNo: roomNos, guests: b.guests || '', invoiceDate: today },
         invoiceType: 'tax-invoice',
+        customTerms: 'Subject to Garoth (M.P.) jurisdiction only.',
       },
     });
   };
