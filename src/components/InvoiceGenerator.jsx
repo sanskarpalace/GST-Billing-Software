@@ -543,7 +543,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
   // email/phone/isSEZ must be part of initial state — otherwise the SEZ flag
   // set inside ClientModal is silently discarded on save, and reopening the
   // bill can never restore contact fields even if the saved client has them.
-  const [client, setClient] = useState(draft?.client || { name: '', address: '', city: '', pin: '', state: '', gstin: '', country: '', email: '', phone: '', isSEZ: false });
+  const [client, setClient] = useState(draft?.client || { name: '', companyName: '', address: '', city: '', pin: '', state: '', gstin: '', country: '', email: '', phone: '', isSEZ: false });
   // v1.9.1 — preview zoom (session-only). Reads from printSettings for the
   // initial value so the user's preference carries across bill switches.
   // v1.10.33 — Was READ-ONLY: the initial-load line pulled from
@@ -1526,6 +1526,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
     // computed CGST+SGST instead of IGST → wrong tax on the filed return.
     setClient({
       name: cli.name || '',
+      companyName: cli.companyName || '',
       address: cli.address || '',
       city: cli.city || '',
       pin: cli.pin || '',
@@ -1581,7 +1582,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
   const openAddClientModal = () => {
     // v1.10.74 - pass country too; without it the modal fell back to the
     // business country and saving could overwrite the invoice's country.
-    setModalClient({ name: client.name || '', address: client.address || '', city: client.city || '', pin: client.pin || '', state: client.state || '', gstin: client.gstin || '', country: client.country || '' });
+    setModalClient({ name: client.name || '', companyName: client.companyName || '', address: client.address || '', city: client.city || '', pin: client.pin || '', state: client.state || '', gstin: client.gstin || '', country: client.country || '' });
     setIsEditingClient(false);
     setShowClientModal(true);
     setShowClientSuggestions(false);
@@ -1605,6 +1606,7 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
     // country/email/phone/isSEZ here was the SEZ tax bug.
     setClient({
       name: data.name || '',
+      companyName: data.companyName || '',
       address: data.address || '',
       city: data.city || '',
       pin: data.pin || '',
@@ -4157,6 +4159,12 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
                     )}
                   </div>
                 )}
+              </div>
+              <div className="form-group full-width">
+                <label className="form-label">Company Name</label>
+                <input type="text" className="form-input" value={client.companyName || ''}
+                  onChange={(e) => setClient({ ...client, companyName: e.target.value })}
+                  placeholder="Registered company / firm name (optional — for business clients)" />
               </div>
               <div className="form-group full-width">
                 <label className="form-label">Billing Address</label>

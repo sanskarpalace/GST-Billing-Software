@@ -618,10 +618,13 @@ const InvoicePreview = React.forwardRef(({ profile: profileProp, client, details
           <div><strong style={{ fontWeight: strongWeight }}>{cap('Invoice #')}: </strong>{cap(invoiceNum)}</div>
           {showReverseChargeLine && <div><strong style={{ fontWeight: strongWeight }}>{cap('Reverse charge')}: </strong>{cap(reverseChargeText)}</div>}
           <div><strong style={{ fontWeight: strongWeight }}>{cap('Date')}: </strong>{cap(invoiceDate)}</div>
-          {client?.name && (
+          {(client?.companyName || client?.name) && (
             <div style={{ marginTop: 3 }}>
-              <strong style={{ fontWeight: strongWeight }}>{cap('Bill to')}: </strong>{cap(client.name)}
+              <strong style={{ fontWeight: strongWeight }}>{cap('Bill to')}: </strong>{cap(client.companyName || client.name)}
             </div>
+          )}
+          {client?.companyName && client?.name && (
+            <div>{cap(client.name)}</div>
           )}
           {client?.gstin && <div>{cap('GSTIN: ' + client.gstin)}</div>}
           {client?.phone && <div>{cap('Ph: ' + client.phone)}</div>}

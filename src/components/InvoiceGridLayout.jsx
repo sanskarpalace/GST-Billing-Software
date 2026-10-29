@@ -189,7 +189,14 @@ function PartyBlock({ ctx, heading, party, withContact }) {
   return (
     <div>
       <div style={label}>{heading}</div>
-      <div style={{ fontWeight: 800 }}>{party.name || 'Client Name'}</div>
+      {party.companyName ? (
+        <>
+          <div style={{ fontWeight: 800 }}>{party.companyName}</div>
+          {party.name && <div>{party.name}</div>}
+        </>
+      ) : (
+        <div style={{ fontWeight: 800 }}>{party.name || 'Client Name'}</div>
+      )}
       {t.clientAddress && party.address && <div style={{ whiteSpace: 'pre-line' }}>{party.address}</div>}
       {t.clientAddress && (party.city || party.pin) && <div>{[party.city, party.pin].filter(Boolean).join(' - ')}</div>}
       {t.gstin && party.gstin && <div>{sellerCC.taxIdLabel || 'GSTIN'}/UIN : <strong>{party.gstin}</strong></div>}

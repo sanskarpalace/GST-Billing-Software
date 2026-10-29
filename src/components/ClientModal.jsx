@@ -7,7 +7,7 @@ export default function ClientModal({ show, onClose, onSave, client, isEditing, 
   // Country defaults: explicit prop (active business profile) → browser locale → 'India'.
   const fallbackCountry = defaultCountry || detectCountryFromBrowser();
   const emptyForm = {
-    name: '', address: '', city: '', pin: '', state: '', gstin: '', email: '', phone: '',
+    name: '', companyName: '', address: '', city: '', pin: '', state: '', gstin: '', email: '', phone: '',
     country: fallbackCountry, isSEZ: false,
     // v1.9.1 — per-client print preferences. When set, they auto-populate
     // invoiceOptions when the user creates a new invoice for this client.
@@ -22,7 +22,7 @@ export default function ClientModal({ show, onClose, onSave, client, isEditing, 
   useEffect(() => {
     if (show && client) {
       setForm({
-        name: client.name || '', address: client.address || '', city: client.city || '',
+        name: client.name || '', companyName: client.companyName || '', address: client.address || '', city: client.city || '',
         pin: client.pin || '', state: client.state || '', gstin: client.gstin || '',
         email: client.email || '', phone: client.phone || '', country: client.country || fallbackCountry,
         isSEZ: !!client.isSEZ,
@@ -78,8 +78,12 @@ export default function ClientModal({ show, onClose, onSave, client, isEditing, 
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="form-group" style={{ gridColumn: 'span 2' }}>
-            <label className="form-label">Client / Business Name *</label>
-            <input type="text" className="form-input" value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. Acme Corp" />
+            <label className="form-label">Client Name *</label>
+            <input type="text" className="form-input" value={form.name} onChange={e => setForm(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. Sandeep Panwar" />
+          </div>
+          <div className="form-group" style={{ gridColumn: 'span 2' }}>
+            <label className="form-label">Company Name</label>
+            <input type="text" className="form-input" value={form.companyName || ''} onChange={e => setForm(prev => ({ ...prev, companyName: e.target.value }))} placeholder="Registered company / firm name (optional)" />
           </div>
           <div className="form-group" style={{ gridColumn: 'span 2' }}>
             <label className="form-label">Address</label>
