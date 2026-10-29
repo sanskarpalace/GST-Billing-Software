@@ -1755,14 +1755,13 @@ export default function SettingsView({ onSaved }) {
 
         {/* Privacy notice — uses the global .notice .notice-info utility so dark/light look identical to every other info card. */}
         <div className="notice notice-info" style={{ marginBottom: '1rem' }}>
-          <span className="notice-icon">🔒</span>
+          <span className="notice-icon">☁</span>
           <div>
-            <strong>Your data is on this computer only.</strong> Nothing is uploaded to
-            us, our servers, or any third party — not invoices, not clients, not
-            settings. The only time anything leaves your machine is if you explicitly
-            click <em>Save to Drive</em> below (uploads to <strong>your own</strong>
-            Google Drive account).
-            Files live under <code>data/</code> and <code>Saved Invoices/</code> next to the app.
+            <strong>Your data is in your own Neon cloud database.</strong> It is shared
+            across every device that opens this app, so it is not kept on this computer.
+            Use <em>Export Backup</em> below to download a full copy as a JSON file
+            (keep it on a USB drive or your own Google Drive); <em>Import Backup</em>
+            restores it. Neon also keeps its own history.
           </div>
         </div>
 

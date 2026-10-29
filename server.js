@@ -722,6 +722,8 @@ app.get('/api/export', (req, res) => {
     receipts: readAllFromDir('receipts'),
     profiles: readAllFromDir('profiles'),
     purchases: readAllFromDir('purchases'),
+    rooms: readAllFromDir('rooms'),
+    bookings: readAllFromDir('bookings'),
     // v1.10.77 - never the PIN hash: a backup file can travel (email, Drive).
     meta: withoutLock(readJSON(META_PATH, {})),
     exportedAt: new Date().toISOString(),
@@ -753,6 +755,8 @@ app.post('/api/import', (req, res) => {
     receiptCount: 0, receiptSkipped: 0,
     profileCount: 0, profileSkipped: 0,
     purchaseCount: 0, purchaseSkipped: 0,
+    roomCount: 0, roomSkipped: 0,
+    bookingCount: 0, bookingSkipped: 0,
   };
 
   // Helper: upsert one entity to a directory, honouring the overwrite flag.
@@ -779,6 +783,8 @@ app.post('/api/import', (req, res) => {
   (data.receipts || []).forEach(r => upsertOne('receipts', r, 'receiptCount', 'receiptSkipped'));
   (data.profiles || []).forEach(p => upsertOne('profiles', p, 'profileCount', 'profileSkipped'));
   (data.purchases || []).forEach(p => upsertOne('purchases', p, 'purchaseCount', 'purchaseSkipped'));
+  (data.rooms || []).forEach(r => upsertOne('rooms', r, 'roomCount', 'roomSkipped'));
+  (data.bookings || []).forEach(b => upsertOne('bookings', b, 'bookingCount', 'bookingSkipped'));
 
   // meta.json — same gating. Previously always overwrote → counters could
   // regress below existing bill numbers → collision loop on next save.

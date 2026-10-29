@@ -331,14 +331,14 @@ app.post('/api/lock/set', h(async (req, res) => {
 // EXPORT / IMPORT (the real online backup path)
 // ===========================================================================
 app.get('/api/export', h(async (req, res) => {
-  const [bills, profile, clients, templates, products, expenses, recurring, receipts, profiles, purchases, meta] = await Promise.all([
+  const [bills, profile, clients, templates, products, expenses, recurring, receipts, profiles, purchases, rooms, bookings, meta] = await Promise.all([
     readAll('bills'), readProfile(DEFAULT_PROFILE), readAll('clients'), readAll('templates'),
     readAll('products'), readAll('expenses'), readAll('recurring'), readAll('receipts'),
-    readAll('profiles'), readAll('purchases'), readMeta({}),
+    readAll('profiles'), readAll('purchases'), readAll('rooms'), readAll('bookings'), readMeta({}),
   ]);
   res.json({
     bills, profile, clients, termsTemplates: templates, products, expenses,
-    recurring, receipts, profiles, purchases,
+    recurring, receipts, profiles, purchases, rooms, bookings,
     meta: withoutLock(meta),
     exportedAt: new Date().toISOString(),
   });
@@ -352,7 +352,7 @@ app.post('/api/import', h(async (req, res) => {
     templateCount: 0, templateSkipped: 0, productCount: 0, productSkipped: 0,
     expenseCount: 0, expenseSkipped: 0, recurringCount: 0, recurringSkipped: 0,
     receiptCount: 0, receiptSkipped: 0, profileCount: 0, profileSkipped: 0,
-    purchaseCount: 0, purchaseSkipped: 0,
+    purchaseCount: 0, purchaseSkipped: 0, roomCount: 0, roomSkipped: 0, bookingCount: 0, bookingSkipped: 0,
   };
   const upsertList = async (collection, list, countKey, skipKey) => {
     for (const entity of list || []) {
@@ -372,6 +372,8 @@ app.post('/api/import', h(async (req, res) => {
   await upsertList('receipts',  data.receipts,       'receiptCount',   'receiptSkipped');
   await upsertList('profiles',  data.profiles,       'profileCount',   'profileSkipped');
   await upsertList('purchases', data.purchases,      'purchaseCount',  'purchaseSkipped');
+  await upsertList('rooms',     data.rooms,          'roomCount',      'roomSkipped');
+  await upsertList('bookings',  data.bookings,       'bookingCount',   'bookingSkipped');
 
   // meta merge — same gating as server.js
   if (data.meta) {

@@ -502,7 +502,7 @@ export const runUpdateNow = async () => {
 
 export const exportAllData = async (selection) => {
   const [all, version] = await Promise.all([apiFetch(`${API}/export`), getAppVersion()]);
-  const sel = selection || { profile: true, profiles: true, bills: true, clients: true, products: true, expenses: true, purchases: true, recurring: true, receipts: true, termsTemplates: true, meta: true, localStorage: true };
+  const sel = selection || { profile: true, profiles: true, bills: true, clients: true, products: true, expenses: true, purchases: true, recurring: true, receipts: true, termsTemplates: true, rooms: true, bookings: true, meta: true, localStorage: true };
 
   const data = { exportedAt: new Date().toISOString(), version, __freegstbill_backup: true };
   if (sel.profile)        data.profile = all.profile;
@@ -515,6 +515,8 @@ export const exportAllData = async (selection) => {
   if (sel.recurring)      data.recurring = all.recurring;
   if (sel.receipts)       data.receipts = all.receipts;
   if (sel.purchases)      data.purchases = all.purchases;
+  if (sel.rooms)          data.rooms = all.rooms;
+  if (sel.bookings)       data.bookings = all.bookings;
   if (sel.meta)           data.meta = all.meta; // includes regionMode, enabledModules, etc. on server
   if (sel.localStorage)   data.localStorage = collectLocalStorage();
 
@@ -540,6 +542,8 @@ export const inspectBackup = (jsonString) => {
       products: Array.isArray(data.products) ? data.products.length : 0,
       expenses: Array.isArray(data.expenses) ? data.expenses.length : 0,
       purchases: Array.isArray(data.purchases) ? data.purchases.length : 0,
+      rooms: Array.isArray(data.rooms) ? data.rooms.length : 0,
+      bookings: Array.isArray(data.bookings) ? data.bookings.length : 0,
       recurring: Array.isArray(data.recurring) ? data.recurring.length : 0,
       receipts: Array.isArray(data.receipts) ? data.receipts.length : 0,
       meta: data.meta ? Object.keys(data.meta).length : 0,
@@ -553,7 +557,7 @@ export const inspectBackup = (jsonString) => {
 export const importData = async (jsonString, selection) => {
   const inspected = typeof jsonString === 'string' ? inspectBackup(jsonString) : { raw: jsonString };
   const data = inspected.raw;
-  const sel = selection || { profile: true, profiles: true, bills: true, clients: true, products: true, expenses: true, purchases: true, recurring: true, receipts: true, termsTemplates: true, meta: true, localStorage: true };
+  const sel = selection || { profile: true, profiles: true, bills: true, clients: true, products: true, expenses: true, purchases: true, recurring: true, receipts: true, termsTemplates: true, rooms: true, bookings: true, meta: true, localStorage: true };
 
   // Build a filtered payload — never touch collections the user didn't tick.
   const payload = {};
@@ -567,6 +571,8 @@ export const importData = async (jsonString, selection) => {
   if (sel.recurring && data.recurring)           payload.recurring = data.recurring;
   if (sel.receipts && data.receipts)             payload.receipts = data.receipts;
   if (sel.purchases && data.purchases)           payload.purchases = data.purchases;
+  if (sel.rooms && data.rooms)                   payload.rooms = data.rooms;
+  if (sel.bookings && data.bookings)             payload.bookings = data.bookings;
   if (sel.meta && data.meta)                     payload.meta = data.meta;
 
   const result = await apiFetch(`${API}/import`, { method: 'POST', body: JSON.stringify(payload) });
