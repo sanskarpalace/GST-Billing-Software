@@ -552,7 +552,19 @@ app.get('/api/version', h(async (req, res) => {
   res.json({ current: process.env.APP_VERSION || 'online', latest: null, updateAvailable: false });
 }));
 app.get('/api/changelog', h(async (req, res) => res.json({ changelog: '' })));
-app.get('/api/check-update', h(async (req, res) => res.json({ updateAvailable: false, current: process.env.APP_VERSION || 'online' })));
+app.get('/api/check-update', h(async (req, res) => {
+  const current = process.env.APP_VERSION || 'online';
+  // On Vercel the web app auto-deploys on push, so there's no update banner.
+  if (process.env.VERCEL) return res.json({ updateAvailable: false, current });
+  try {
+    const repo = process.env.UPDATE_REPO || 'sanskarpalace/GST-Billing-Software';
+    const r = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'sanskar-palace-billing' } });
+    if (!r.ok) return res.json({ updateAvailable: false, current });
+    const rel = await r.json();
+    const latest = String(rel.tag_name || '').replace(/^v/, '');
+    res.json({ updateAvailable: !!latest && latest !== current, current, latest, url: rel.html_url });
+  } catch { res.json({ updateAvailable: false, current }); }
+}));
 
 // ===========================================================================
 // TRASH (bills soft-deleted above)
