@@ -114,6 +114,8 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const departures = bookings.filter((b) => b.kind !== 'block' && b.status === 'checked-in' && b.checkOut === today);
   const reservations = bookings.filter((b) => isActive(b) && b.kind !== 'block' && b.status !== 'checked-in').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
   const blocks = bookings.filter((b) => isActive(b) && b.kind === 'block').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+  const history = bookings.filter((b) => b.kind !== 'block' && (b.status === 'checked-out' || b.status === 'cancelled'))
+    .sort((a, b) => (b.checkedOutAt || b.checkOut || '').localeCompare(a.checkedOutAt || a.checkOut || ''));
 
   const guestRooms = rooms.filter((r) => !r.isHall);
   const occupiedCount = guestRooms.filter((r) => roomStatus(r).key === 'occupied').length;
@@ -189,7 +191,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
       {/* Tabs */}
       <div className="flex gap-2" style={{ marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {[['board', 'Board'], ['reservations', `Reservations${reservations.length ? ` (${reservations.length})` : ''}`], ['blocks', `Event blocks${blocks.length ? ` (${blocks.length})` : ''}`], ['rooms', 'Rooms']].map(([k, label]) => (
+        {[['board', 'Board'], ['reservations', `Reservations${reservations.length ? ` (${reservations.length})` : ''}`], ['blocks', `Event blocks${blocks.length ? ` (${blocks.length})` : ''}`], ['history', `History${history.length ? ` (${history.length})` : ''}`], ['rooms', 'Rooms']].map(([k, label]) => (
           <button key={k} className={`btn ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -264,6 +266,24 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                   <td><div className="table-actions" style={{ justifyContent: 'center' }}>
                     <button className="icon-btn icon-btn-red" title="Remove block" onClick={() => removeBooking(b, 'Event block')}><Trash2 size={14} /></button>
                   </div></td>
+                </tr>
+              ))}</tbody></table></div>
+          )}
+        </div>
+      ) : tab === 'history' ? (
+        <div className="glass-panel" style={{ padding: 0 }}>
+          {history.length === 0 ? (
+            <div className="empty-state"><CalendarDays size={48} /><p>No past stays yet. Checked-out guests will appear here.</p></div>
+          ) : (
+            <div className="table-scroll"><table className="data-table"><thead><tr><th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Status</th></tr></thead>
+              <tbody>{history.map((b) => (
+                <tr key={b.id}>
+                  <td className="font-medium">{b.guestName || '—'}{b.guestPhone ? <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{b.guestPhone}</div> : null}</td>
+                  <td>{(b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</td>
+                  <td>{fmtDate(b.checkIn)}</td>
+                  <td>{fmtDate(b.checkOut)}</td>
+                  <td>{nightsBetween(b.checkIn, b.checkOut)}</td>
+                  <td><span style={{ fontWeight: 600, fontSize: '0.8rem', color: b.status === 'cancelled' ? 'var(--text-muted)' : STATUS.occupied.color }}>{b.status === 'cancelled' ? 'Cancelled' : 'Checked out'}</span></td>
                 </tr>
               ))}</tbody></table></div>
           )}
