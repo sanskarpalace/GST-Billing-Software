@@ -19,6 +19,21 @@ export const config = {
   matcher: '/:path*',
 };
 
+// Known link-preview / social crawlers. They can't type a Basic Auth password,
+// so if the whole site is gated they get a 401 and show a blank card. We let
+// them GET non-API pages so they can read the Open Graph / Twitter meta. This
+// exposes nothing sensitive: the HTML shell carries no data, and every /api/*
+// route is still enforced by requireAuth inside the function, so a crawler (or
+// anyone spoofing one of these UAs) still can't read a single record.
+const CRAWLER_UA = /whatsapp|facebookexternalhit|facebot|twitterbot|slackbot|slack-imgproxy|telegrambot|linkedinbot|discordbot|pinterest|googlebot|bingbot|embedly|redditbot|skypeuripreview|vkshare|applebot|whatsapp\/|iframely/i;
+
+// Non-sensitive branding/share assets that must load without a login so the
+// favicon, PWA manifest, icons and og:image cover render in previews.
+const PUBLIC_ASSETS = new Set([
+  '/favicon.ico', '/favicon.svg', '/og-preview.png',
+  '/manifest.webmanifest', '/robots.txt',
+]);
+
 export default function middleware(request) {
   try {
     const { pathname } = new URL(request.url);
@@ -26,6 +41,16 @@ export default function middleware(request) {
 
     const pass = process.env.APP_PASSWORD;
     if (!pass) return next(); // gate not configured → open
+
+    // Public share/branding assets (and the PWA icon folder) bypass the gate.
+    if (PUBLIC_ASSETS.has(pathname) || pathname.startsWith('/icons/')) return next();
+
+    // Let social crawlers read the meta on non-API GETs (data stays protected
+    // by the function's own auth). Humans still get the Basic Auth prompt.
+    if (request.method === 'GET' && !pathname.startsWith('/api/')) {
+      const ua = request.headers.get('user-agent') || '';
+      if (CRAWLER_UA.test(ua)) return next();
+    }
 
     const user = process.env.APP_USER || 'admin';
     const mgrPass = process.env.MANAGER_PASSWORD;
@@ -41,7 +66,7 @@ export default function middleware(request) {
     }
     return new Response('Authentication required', {
       status: 401,
-      headers: { 'WWW-Authenticate': 'Basic realm="Free GST Billing"' },
+      headers: { 'WWW-Authenticate': 'Basic realm="Sanskar Palace"' },
     });
   } catch {
     // A middleware throw would 500 the whole site. Fail open instead — the
