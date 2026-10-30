@@ -565,6 +565,30 @@ export const findBookingConflicts = (existing, candidate) => {
     .filter((x) => { const [xs, xe] = interval(x); return cs < xe && xs < ce; });
 };
 
+// Stable grouping key for an event block: its eventId when present (two events
+// can share a name), else the trimmed, lower-cased name. Shared by the board,
+// the receipt "Against Event" picker and anywhere blocks group into events.
+export const eventKey = (b) => (b && b.eventId) || ('n:' + String((b && b.eventName) || 'Event').trim().toLowerCase());
+
+// Collapse event-block bookings into one entry per event with a combined date
+// span (earliest checkIn .. latest checkOut), sorted by start date. Each group:
+//   { key, eventId, eventName, from, to, blocks }
+// This is why a 3-day event shows as ONE row with a range instead of 3 rows.
+export const groupEventBlocks = (bookings) => {
+  const map = new Map();
+  for (const b of bookings || []) {
+    if (!b || b.kind !== 'block') continue;
+    const key = eventKey(b);
+    let g = map.get(key);
+    if (!g) { g = { key, eventId: b.eventId || '', eventName: String(b.eventName || 'Event').trim(), from: b.checkIn, to: b.checkOut, blocks: [] }; map.set(key, g); }
+    g.blocks.push(b);
+    if (b.checkIn && (!g.from || b.checkIn < g.from)) g.from = b.checkIn;
+    if (b.checkOut && (!g.to || b.checkOut > g.to)) g.to = b.checkOut;
+    if (!g.eventId && b.eventId) g.eventId = b.eventId;
+  }
+  return [...map.values()].sort((a, b) => String(a.from || '').localeCompare(String(b.from || '')));
+};
+
 // One-time backfill for event blocks created before `eventId` existed. Those
 // legacy blocks are grouped by name; this gives each distinct event a stable
 // id so renaming no longer scatters its days and the "Add day" button can

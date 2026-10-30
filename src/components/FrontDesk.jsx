@@ -3,7 +3,7 @@ import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, Receip
 import { toast } from './Toast';
 import HelpButton from './HelpButton';
 import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient } from '../store';
-import { localToday, formatCurrency, planEventIdBackfill } from '../utils';
+import { localToday, formatCurrency, planEventIdBackfill, eventKey } from '../utils';
 
 // ---- date helpers (local, YYYY-MM-DD) ----
 const isoAddDays = (iso, n) => {
@@ -29,9 +29,8 @@ const coversDay = (b, day) => {
   return b.checkIn <= day && day < b.checkOut;
 };
 const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
-// Group key for event blocks: a unique eventId when present (robust against two
-// events sharing a name), else fall back to the name for older blocks.
-const eventKey = (b) => b.eventId || ('n:' + String(b.eventName || 'Event').trim());
+// eventKey (shared with the receipt picker + backfill) groups blocks by eventId
+// when present, else by name — see utils.js.
 
 const STATUS = {
   vacant:   { label: 'Vacant',   color: '#059669', bg: 'rgba(5,150,105,0.10)' },

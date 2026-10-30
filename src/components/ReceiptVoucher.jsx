@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Receipt, Plus, Trash2, Search, Printer, Pencil } from 'lucide-react';
 import { getAllReceipts, saveReceipt, deleteReceipt, getAllBills, getProfile, getNextInvoiceNumber, saveBill, getAllClients, saveClient, getAllBookings } from '../store';
-import { formatCurrency, numberToWords, belongsToProfile, isUnassignedToBusiness, countsAsSales, businessKeyOf, localToday, amountDue, paymentStatusFor, isCancelledBill } from '../utils';
+import { formatCurrency, numberToWords, belongsToProfile, isUnassignedToBusiness, countsAsSales, businessKeyOf, localToday, amountDue, paymentStatusFor, isCancelledBill, groupEventBlocks } from '../utils';
 import UnassignedBanner from './UnassignedBanner';
 import { toast } from './Toast';
 import { confirmAction } from './ConfirmModal';
@@ -321,6 +321,10 @@ export default function ReceiptVoucher() {
     loadData();
   };
 
+  // Collapse multi-day event blocks into one entry per event (range shown),
+  // so the "Against Event" picker lists each event once, not once per day.
+  const eventGroups = groupEventBlocks(eventBlocks);
+
   return (
     <div className="dashboard-container">
       <div className="page-header">
@@ -440,10 +444,10 @@ export default function ReceiptVoucher() {
               <div className="form-group">
                 <label className="form-label">Against Event (optional)</label>
                 <select className="form-input" value={form.eventId}
-                  onChange={e => { const b = eventBlocks.find(x => x.id === e.target.value); setForm(f => ({ ...f, eventId: e.target.value, eventName: b ? (b.eventName || '') : '' })); }}>
+                  onChange={e => { const g = eventGroups.find(x => (x.eventId || x.key) === e.target.value); setForm(f => ({ ...f, eventId: e.target.value, eventName: g ? g.eventName : '' })); }}>
                   <option value="">— None —</option>
-                  {eventBlocks.map(b => <option key={b.id} value={b.id}>{b.eventName || 'Event'} · {b.checkIn}{b.checkOut !== b.checkIn ? `–${b.checkOut}` : ''}</option>)}
-                  {form.eventId && !eventBlocks.some(b => b.id === form.eventId) && form.eventName && <option value={form.eventId}>{form.eventName}</option>}
+                  {eventGroups.map(g => { const val = g.eventId || g.key; return <option key={g.key} value={val}>{g.eventName} · {g.from}{g.to && g.to !== g.from ? `–${g.to}` : ''}</option>; })}
+                  {form.eventId && !eventGroups.some(g => (g.eventId || g.key) === form.eventId) && form.eventName && <option value={form.eventId}>{form.eventName}</option>}
                 </select>
               </div>
               <div className="form-group">
