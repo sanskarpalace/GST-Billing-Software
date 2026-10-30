@@ -565,6 +565,28 @@ export const findBookingConflicts = (existing, candidate) => {
     .filter((x) => { const [xs, xe] = interval(x); return cs < xe && xs < ce; });
 };
 
+// One-time backfill for event blocks created before `eventId` existed. Those
+// legacy blocks are grouped by name; this gives each distinct event a stable
+// id so renaming no longer scatters its days and the "Add day" button can
+// target it precisely. Blocks sharing a (trimmed, case-insensitive) name are
+// treated as one event and get the SAME new id — matching how they already
+// display. Returns ONLY the blocks that need updating (with eventId added), so
+// re-running after everything is keyed yields an empty list (idempotent).
+export const planEventIdBackfill = (bookings) => {
+  const byName = new Map(); // nameKey -> eventId
+  const out = [];
+  const base = Date.now();
+  let seq = 0;
+  for (const b of bookings || []) {
+    if (!b || b.kind !== 'block' || b.eventId) continue;
+    const nameKey = String(b.eventName || 'Event').trim().toLowerCase();
+    let eid = byName.get(nameKey);
+    if (!eid) { eid = `evt_${base}_${seq++}`; byName.set(nameKey, eid); }
+    out.push({ ...b, eventId: eid });
+  }
+  return out;
+};
+
 export const ORDER_DETAIL_FIELDS = [
   { key: 'checkIn', label: 'Check-in date', type: 'date' },
   { key: 'checkOut', label: 'Check-out date', type: 'date' },

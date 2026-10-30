@@ -3,7 +3,7 @@ import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, Receip
 import { toast } from './Toast';
 import HelpButton from './HelpButton';
 import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient } from '../store';
-import { localToday, formatCurrency } from '../utils';
+import { localToday, formatCurrency, planEventIdBackfill } from '../utils';
 
 // ---- date helpers (local, YYYY-MM-DD) ----
 const isoAddDays = (iso, n) => {
@@ -81,7 +81,18 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
     setLoading(true);
     try {
       const [r, b] = await Promise.all([getAllRooms(), getAllBookings()]);
-      setRooms(r); setBookings(b);
+      setRooms(r);
+      // One-time migration: give legacy event blocks (created before eventId
+      // existed) a stable id, grouped by name. Acts only on the first load that
+      // finds un-keyed blocks; afterwards the plan is empty, so this is a no-op.
+      const toFix = planEventIdBackfill(b);
+      if (toFix.length) {
+        for (const blk of toFix) { try { await saveBooking(blk, { force: true }); } catch { /* retried next load */ } }
+        setBookings(await getAllBookings());
+        toast(`Updated grouping for ${toFix.length} older event block${toFix.length > 1 ? 's' : ''}`, 'success');
+      } else {
+        setBookings(b);
+      }
     } catch { toast('Could not load front desk data', 'error'); }
     setLoading(false);
   };
