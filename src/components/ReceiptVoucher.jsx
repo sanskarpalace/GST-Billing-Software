@@ -20,6 +20,7 @@ const emptyForm = {
   paymentMode: 'Bank Transfer',
   referenceNo: '',
   againstInvoice: '',
+  receivedBy: '',
   note: '',
 };
 
@@ -106,6 +107,7 @@ export default function ReceiptVoucher() {
       paymentMode: rcp.paymentMode || 'Bank Transfer',
       referenceNo: rcp.referenceNo || '',
       againstInvoice: rcp.againstInvoice || '',
+      receivedBy: rcp.receivedBy || '',
       note: rcp.note || '',
     });
     setEditingId(rcp.id);
@@ -429,6 +431,10 @@ export default function ReceiptVoucher() {
                 <label className="form-label">Against Invoice</label>
                 <input type="text" className="form-input" value={form.againstInvoice} onChange={e => updateField('againstInvoice', e.target.value)} placeholder="e.g. INV/2025-26/0001" />
               </div>
+              <div className="form-group">
+                <label className="form-label">Received By (optional)</label>
+                <input type="text" className="form-input" value={form.receivedBy} onChange={e => updateField('receivedBy', e.target.value)} placeholder="Staff who took the payment" />
+              </div>
               <div className="form-group" style={{ gridColumn: 'span 2' }}>
                 <label className="form-label">Note (optional)</label>
                 <input type="text" className="form-input" value={form.note} onChange={e => updateField('note', e.target.value)} />
@@ -464,8 +470,18 @@ export default function ReceiptVoucher() {
             <p className="receipt-words">{numberToWords(previewReceipt.amount)}</p>
             {previewReceipt.note && <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Note: {previewReceipt.note}</p>}
             <div className="receipt-footer">
-              <div className="receipt-sig"><div className="receipt-sig-line"></div><span className="receipt-sig-label">Received By</span></div>
-              <div className="receipt-sig"><div className="receipt-sig-line"></div><span className="receipt-sig-label">Authorized Signatory</span></div>
+              <div className="receipt-sig">
+                <div style={{ height: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                  {previewReceipt.receivedBy && <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{previewReceipt.receivedBy}</span>}
+                </div>
+                <div className="receipt-sig-line"></div><span className="receipt-sig-label">Received By</span>
+              </div>
+              <div className="receipt-sig">
+                <div style={{ height: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+                  {profile.signature && <img src={profile.signature} alt="Signature" style={{ maxHeight: 40, maxWidth: 170, objectFit: 'contain' }} />}
+                </div>
+                <div className="receipt-sig-line"></div><span className="receipt-sig-label">Authorized Signatory</span>
+              </div>
             </div>
           </div>
         </div>
