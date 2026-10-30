@@ -55,9 +55,9 @@ export default defineConfig({
       manifest: {
         name: 'Sanskar Palace Billing',
         short_name: 'Sanskar Palace',
-        description: 'Open-source, offline GST invoicing for India and 21 other countries. Tax invoices, GSTR-1 / GSTR-3B / GSTR-2B, TDS / TCS, multi-currency, multi-account payments, recurring billing. Your data stays on your computer. Free forever.',
-        theme_color: '#1e40af',
-        background_color: '#f8fafc',
+        description: 'Billing and front-desk management for Sanskar Palace Hotel & Resort, Garoth (Shamgarh), Madhya Pradesh — GST tax invoices, advance receipts, room check-in / check-out, reservations and event bookings.',
+        theme_color: '#0b0b0b',
+        background_color: '#0b0b0b',
         display: 'standalone',
         // display_override gives Edge / Chrome the option to render in a
         // tighter "Window Controls Overlay" mode (the title bar disappears,
