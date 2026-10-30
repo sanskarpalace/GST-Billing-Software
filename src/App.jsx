@@ -4,7 +4,11 @@ import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProd
 
 // Sidebar sections the "manager" role does not see (admin keeps everything).
 // The API also enforces these — hiding is only the UI half.
-const MANAGER_HIDDEN_VIEWS = new Set(['expenses', 'reports', 'filing', 'incometax', 'settings', 'staff']);
+// Views a manager (reception) never sees. Includes the Dashboard, because its
+// revenue/collections summary is the hotel-wide money overview we keep private;
+// managers land on Front Desk instead and bill events from there.
+const MANAGER_HIDDEN_VIEWS = new Set(['dashboard', 'expenses', 'reports', 'filing', 'incometax', 'settings', 'staff']);
+const managerHome = (role) => (role === 'manager' ? 'frontdesk' : 'dashboard');
 import { isModuleEnabled, getUpcomingFilings, countsAsSales, localToday, toLocalIsoDate, DOCS_URL } from './utils';
 // v1.10.4 — Route-level lazy loading. Prior App.jsx synchronously
 // imported all 12 views (~15k LOC combined), so a first-paint on
@@ -555,12 +559,13 @@ function App() {
     const map = { new: 'invoicing', clients: 'clients', inventory: 'inventory', expenses: 'expenses', purchases: 'purchases', recurring: 'recurring', receipts: 'receipts', reports: 'reports', filing: 'gstReturns' };
     const moduleForView = map[currentView];
     if (moduleForView && !isModuleEnabled(moduleForView, enabledModules)) {
-      setCurrentView('dashboard');
+      setCurrentView(managerHome(role));
       return;
     }
-    // Managers can't land on an admin-only view, even via a deep link.
+    // Managers can't land on an admin-only view (incl. the Dashboard), even via
+    // a deep link — send them to their Front Desk home.
     if (role === 'manager' && MANAGER_HIDDEN_VIEWS.has(currentView)) {
-      setCurrentView('dashboard');
+      setCurrentView('frontdesk');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentView, JSON.stringify(enabledModules), role]);
@@ -1062,7 +1067,7 @@ function App() {
       )}
       <div className="main-content">
         {currentView !== 'new' && <StarBanner />}
-        {currentView === 'dashboard' && (
+        {currentView === 'dashboard' && role !== 'manager' && (
           <Dashboard onNew={handleNewInvoice} onEdit={handleEditInvoice} onPrint={handlePrintInvoice} onDuplicate={handleDuplicateInvoice} onConvert={handleConvertToInvoice} onOpenProducts={() => setCurrentView('inventory')} onOpenSettings={() => setCurrentView('settings')} onOpenSupport={() => setCurrentView('support')} activeProfile={profile} />
         )}
         {currentView === 'new' && (
