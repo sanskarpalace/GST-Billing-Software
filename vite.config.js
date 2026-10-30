@@ -51,7 +51,7 @@ export default defineConfig({
       // gets `cleanupOutdatedCaches: true` so orphaned assets from a
       // previous version don't shadow the new ones.
       registerType: 'prompt',
-      includeAssets: ['favicon.svg', 'og-preview.png'],
+      includeAssets: ['favicon.ico', 'favicon-16x16.png', 'favicon-32x32.png', 'apple-touch-icon.png', 'og-preview.png'],
       manifest: {
         name: 'Sanskar Palace Billing',
         short_name: 'Sanskar Palace',
@@ -81,40 +81,28 @@ export default defineConfig({
             short_name: 'New Invoice',
             description: 'Create a new tax invoice',
             url: '/?view=new',
-            // v1.10.6 — audit L16: SVG at fixed `sizes:96x96` confused
-            // Windows jumplist. `any` lets the OS render at whatever
-            // size it wants (SVG is scalable).
-            icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
           {
             name: 'Dashboard',
             short_name: 'Dashboard',
             description: 'See invoices and stats',
             url: '/?view=dashboard',
-            // v1.10.6 — audit L16: SVG at fixed `sizes:96x96` confused
-            // Windows jumplist. `any` lets the OS render at whatever
-            // size it wants (SVG is scalable).
-            icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
           {
             name: 'GST Returns',
             short_name: 'GST Returns',
             description: 'GSTR-1 / 3B / 2B reconciliation',
             url: '/?view=filing',
-            // v1.10.6 — audit L16: SVG at fixed `sizes:96x96` confused
-            // Windows jumplist. `any` lets the OS render at whatever
-            // size it wants (SVG is scalable).
-            icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
           {
             name: 'Settings',
             short_name: 'Settings',
             description: 'Business profile, accounts, modules',
             url: '/?view=settings',
-            // v1.10.6 — audit L16: SVG at fixed `sizes:96x96` confused
-            // Windows jumplist. `any` lets the OS render at whatever
-            // size it wants (SVG is scalable).
-            icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml' }],
+            icons: [{ src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
           },
         ],
         // v1.10.2 — Icon set matches Android + iOS "Add to Home Screen"
@@ -127,7 +115,6 @@ export default defineConfig({
         // handle it (all modern desktop). The PNG entries point at files
         // that MUST be dropped into public/icons/ — see README.
         icons: [
-          { src: '/favicon.svg', sizes: 'any',       type: 'image/svg+xml' },
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           { src: '/icons/maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
