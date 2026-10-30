@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, ReceiptText } from 'lucide-react';
 import { toast } from './Toast';
 import HelpButton from './HelpButton';
-import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient } from '../store';
+import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient, getAllReceipts } from '../store';
 import { localToday, formatCurrency, planEventIdBackfill, eventKey } from '../utils';
 
 // ---- date helpers (local, YYYY-MM-DD) ----
@@ -61,9 +61,10 @@ async function saveWithOverride(booking) {
   }
 }
 
-export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
+export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenReceipts }) {
   const [rooms, setRooms] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [receipts, setReceipts] = useState([]);
   const [tab, setTab] = useState('board');
   const [loading, setLoading] = useState(true);
   const [roomModal, setRoomModal] = useState(null);     // room object (new = {})
@@ -79,8 +80,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const load = async () => {
     setLoading(true);
     try {
-      const [r, b] = await Promise.all([getAllRooms(), getAllBookings()]);
+      const [r, b, rc] = await Promise.all([getAllRooms(), getAllBookings(), getAllReceipts().catch(() => [])]);
       setRooms(r);
+      setReceipts(Array.isArray(rc) ? rc : []);
       // One-time migration: give legacy event blocks (created before eventId
       // existed) a stable id, grouped by name. Acts only on the first load that
       // finds un-keyed blocks; afterwards the plan is empty, so this is a no-op.
@@ -148,6 +150,31 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
         customTerms: 'Subject to Garoth (M.P.) jurisdiction only.',
       },
     });
+  };
+
+  // Build a GST invoice for a whole event: the agreed event total as a single
+  // line, pre-filled into the invoice editor (the user can itemise further).
+  const billFromEvent = (days, evName, total) => {
+    const allIds = [...new Set(days.flatMap((d) => d.roomIds || []))];
+    const roomNos = allIds.map((id) => roomById(id)?.number).filter(Boolean).join(', ');
+    const from = days[0]?.checkIn, to = days[days.length - 1]?.checkOut;
+    onCreateInvoiceFromStay({
+      clientName: evName,
+      invoiceType: 'tax-invoice',
+      data: {
+        client: { name: evName, companyName: '', phone: '', gstin: '', address: '', city: '', pin: '', state: '', country: 'India', email: '', isSEZ: false },
+        items: [{ id: `${Date.now()}`, name: `Event — ${evName}`, hsn: '', quantity: 1, unit: 'Event', rate: Number(total) || 0, discount: 0, taxPercent: 5, cessPercent: 0 }],
+        details: { checkIn: from, checkOut: to, roomNo: roomNos, guests: '', invoiceDate: today },
+        invoiceType: 'tax-invoice',
+        customTerms: 'Subject to Garoth (M.P.) jurisdiction only.',
+      },
+    });
+  };
+
+  // Open the Receipts screen pre-filled for this event (advance against it).
+  const receiptForEvent = (eventRef, evName, amount) => {
+    try { sessionStorage.setItem('sp_receiptPrefill', JSON.stringify({ eventId: eventRef, eventName: evName, amount: amount > 0 ? amount : '' })); } catch { /* ignore */ }
+    if (onOpenReceipts) onOpenReceipts();
   };
 
   const doCheckOutAndBill = async (b) => {
@@ -426,6 +453,10 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                 <p style={{ color: 'var(--text-muted)' }}>No days left for this event.</p>
               ) : (<>
                 {days[0].notes && <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>{days[0].notes}</p>}
+                <EventBilling days={days} receipts={receipts} currency={currency}
+                  onSaved={load}
+                  onCreateReceipt={(ref, name, bal) => { receiptForEvent(ref, name, bal); setEventDetail(null); }}
+                  onCreateInvoice={(d, name, total) => { billFromEvent(d, name, total); setEventDetail(null); }} />
                 {days.map((b) => (
                   <div key={b.id} style={{ padding: '0.6rem 0', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -661,5 +692,63 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = nu
       <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{(form.checkIn && form.checkOut && form.checkOut >= form.checkIn) ? `${nights + 1} day${nights + 1 > 1 ? 's' : ''} blocked` : 'Pick a valid date range'}</div>
       <div className="flex gap-2 justify-end mt-4"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>{editBlock ? 'Save changes' : addEvent ? 'Add day' : 'Block rooms'}</button></div>
     </div></div>
+  );
+}
+
+// Event billing summary shown inside the event-detail modal: the agreed total
+// (editable, written to every day-block of the event), the advance already
+// received (sum of receipts linked to this event), the balance due, and quick
+// actions to raise a receipt or an invoice for the event.
+function EventBilling({ days, receipts, currency, onSaved, onCreateReceipt, onCreateInvoice }) {
+  const first = days[0] || {};
+  const evId = first.eventId || '';
+  const evKey = eventKey(first);
+  const evName = (first.eventName || 'Event').trim();
+  const stored = Number(days.find((d) => d.eventTotal != null && d.eventTotal !== '')?.eventTotal || 0);
+  const [draft, setDraft] = useState(stored ? String(stored) : '');
+  const [saving, setSaving] = useState(false);
+
+  const keys = evId ? [evKey, evId] : [evKey];
+  const advance = (receipts || [])
+    .filter((r) => r && r.eventId && keys.includes(r.eventId))
+    .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const total = Number(draft) || 0;
+  const balance = total - advance;
+  const dirty = (Number(draft) || 0) !== stored;
+
+  const saveTotal = async () => {
+    setSaving(true);
+    try {
+      for (const b of days) await saveBooking({ ...b, eventTotal: Number(draft) || 0 }, { force: true });
+      toast('Event total saved', 'success');
+      await onSaved();
+    } catch { toast('Could not save the total', 'error'); }
+    setSaving(false);
+  };
+
+  const row = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 };
+  return (
+    <div style={{ background: 'var(--bg-subtle, rgba(148,163,184,0.08))', border: '1px solid var(--border)', borderRadius: 10, padding: '0.8rem 0.9rem', margin: '0 0 0.85rem' }}>
+      <div style={{ ...row, flexWrap: 'wrap' }}>
+        <label className="form-label" style={{ margin: 0 }}>Event total</label>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <input type="number" min="0" step="0.01" className="form-input" style={{ width: 140, textAlign: 'right' }}
+            value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="0" />
+          <button className="btn btn-secondary" style={{ fontSize: '0.78rem' }} onClick={saveTotal} disabled={saving || !dirty}>Save</button>
+        </div>
+      </div>
+      <div style={{ ...row, fontSize: '0.82rem', marginTop: 10 }}>
+        <span style={{ color: 'var(--text-muted)' }}>Advance received</span>
+        <span style={{ fontWeight: 600, color: '#059669' }}>{formatCurrency(advance, currency)}</span>
+      </div>
+      <div style={{ ...row, fontSize: '0.92rem', marginTop: 6, paddingTop: 7, borderTop: '1px solid var(--border)' }}>
+        <span style={{ fontWeight: 700 }}>Balance due</span>
+        <span style={{ fontWeight: 700, color: balance > 0 ? '#dc2626' : '#059669' }}>{formatCurrency(balance, currency)}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 11 }}>
+        <button className="btn btn-secondary" style={{ flex: 1, fontSize: '0.8rem' }} onClick={() => onCreateReceipt(evId || evKey, evName, balance)}><ReceiptText size={14} /> Create receipt</button>
+        <button className="btn btn-primary" style={{ flex: 1, fontSize: '0.8rem' }} onClick={() => onCreateInvoice(days, evName, total)}><ReceiptText size={14} /> Create invoice</button>
+      </div>
+    </div>
   );
 }

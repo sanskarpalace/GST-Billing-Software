@@ -1082,7 +1082,7 @@ function App() {
           <InventoryView />
         )}
         {currentView === 'frontdesk' && (
-          <FrontDesk profile={profile} onCreateInvoiceFromStay={handleCreateInvoiceFromStay} />
+          <FrontDesk profile={profile} onCreateInvoiceFromStay={handleCreateInvoiceFromStay} onOpenReceipts={() => setCurrentView('receipts')} />
         )}
         {/* v1.10.66 (#64 item 1) — `key={businessKey}` remounts these screens
             when the business changes. Each reads the business once when it

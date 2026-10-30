@@ -66,6 +66,23 @@ export default function ReceiptVoucher() {
     loadData();
   }, []);
 
+  // Opened from an event in Front Desk ("Create receipt")? Pre-fill a new
+  // receipt for that event with its balance, and open the form.
+  useEffect(() => {
+    let raw = null;
+    try { raw = sessionStorage.getItem('sp_receiptPrefill'); sessionStorage.removeItem('sp_receiptPrefill'); } catch { /* ignore */ }
+    if (!raw) return;
+    let pre; try { pre = JSON.parse(raw); } catch { return; }
+    (async () => {
+      const receiptNo = await getNextReceiptNo();
+      previewedNoRef.current = receiptNo;
+      setForm({ ...emptyForm, date: localToday(), receiptNo, eventId: pre.eventId || '', eventName: pre.eventName || '', amount: pre.amount ? String(pre.amount) : '' });
+      setEditingId(null);
+      setShowForm(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Peek at the next receipt number using the SAME atomic counter that
   // invoice numbers use. Pre-v1.6.8 this counted `receipts.length + 1`
   // which raced under concurrent saves + two tabs.
