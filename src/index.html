@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+    <!-- Blank-screen recovery: stable-URL watchdog that reloads past a stale
+         service worker if the app bundle fails to mount (see public/recover.js). -->
+    <script src="/recover.js" defer></script>
+
     <!--
       Content Security Policy. Defends the rich-text Terms / Notes / extra-section
       paths which inject sanitized HTML via DOMPurify. Even if the sanitizer config
