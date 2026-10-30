@@ -12,7 +12,7 @@ import { fileURLToPath } from 'url';
 // invoice-level discount, and round-off. Previously the recurring auto-fire
 // re-implemented totals inline and silently reintroduced every bug the
 // v1.10.1 extraction fixed. Same source of truth now.
-import { templateTotals, clientYearToDate, nextCounterValue, startFor, numberSeriesFor, counterKeyFor, formatDocNumber, businessKeyOf, getFinancialYearLabel, INVOICE_TYPES, findBookingConflicts } from './src/utils.js';
+import { templateTotals, clientYearToDate, nextCounterValue, startFor, numberSeriesFor, counterKeyFor, formatDocNumber, businessKeyOf, getFinancialYearLabel, INVOICE_TYPES, findBookingConflicts, countsAsSales } from './src/utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, 'data');
@@ -227,6 +227,51 @@ app.get('/api/bills', (req, res) => {
   const bills = readAllFromDir('bills');
   bills.sort((a, b) => new Date(b.invoiceDate) - new Date(a.invoiceDate));
   res.json(bills);
+});
+
+// Notification-badge summary — mirrors the online /api/summary (api/index.js)
+// so the shared frontend's bell poll has a single code path on both backends.
+// Here the data is local files (no network egress), so we filter in JS and
+// return the same { count, sig, sample[≤3] } shape the browser expects. today
+// / dueSoonEnd arrive from the browser (local timezone); stockThreshold mirrors
+// the user's low-stock setting.
+app.get('/api/summary', (req, res) => {
+  const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+  const pad = (n) => String(n).padStart(2, '0');
+  const now = new Date();
+  const serverToday = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const today = dayRe.test(req.query.today || '') ? req.query.today : serverToday;
+  const end = dayRe.test(req.query.dueSoonEnd || '') ? req.query.dueSoonEnd : today;
+  const threshold = Math.max(0, Number(req.query.stockThreshold) || 0);
+
+  const byDue = (a, b) => (a.data.details.dueDate < b.data.details.dueDate ? -1 : 1);
+  const chase = (b) => b && countsAsSales(b) && b.status !== 'paid' && b.data?.details?.dueDate;
+  const bills = readAllFromDir('bills');
+  const overdue = bills.filter((b) => chase(b) && b.data.details.dueDate < today).sort(byDue);
+  const dueSoon = bills.filter((b) => chase(b) && b.data.details.dueDate >= today && b.data.details.dueDate <= end).sort(byDue);
+
+  const products = readAllFromDir('products');
+  const low = products.filter((p) => p && !p.isService && (p.stock ?? 999) <= threshold)
+    .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0));
+
+  const sig = (arr, keyFn) => arr.map(keyFn).sort().join('|');
+  res.json({
+    overdue: {
+      count: overdue.length,
+      sig: sig(overdue, (b) => b.invoiceNumber || b.id),
+      sample: overdue.slice(0, 3).map((b) => b.invoiceNumber),
+    },
+    dueSoon: {
+      count: dueSoon.length,
+      sig: sig(dueSoon, (b) => b.invoiceNumber || b.id),
+      sample: dueSoon.slice(0, 3).map((b) => ({ invoiceNumber: b.invoiceNumber, clientName: b.clientName })),
+    },
+    lowStock: {
+      count: low.length,
+      sig: sig(low, (p) => `${p.id || p.name}:${p.stock ?? ''}`),
+      sample: low.slice(0, 3).map((p) => ({ name: p.name, stock: p.stock })),
+    },
+  });
 });
 
 app.post('/api/bills', (req, res) => {

@@ -24,6 +24,7 @@ import {
 import {
   readAll, readOne, exists, writeOne, deleteOne, moveOne,
   readProfile, writeProfile, readMeta, writeMeta, readPrefs, writePrefs, incrementMeta,
+  sql,
 } from './db.js';
 
 const app = express();
@@ -156,6 +157,79 @@ app.get('/api/whoami', async (req, res) => {
 // gigabytes of Neon egress per month from one always-open front-desk tab. This
 // only proves the function is reachable; /api/health still reports DB status.
 app.get('/api/ping', (req, res) => { res.json({ ok: true }); });
+// Notification-badge summary. Computed with SQL aggregates so the app's bell
+// poll gets back only counts + a tiny preview, instead of downloading every
+// bill and product from Neon each tick (that full pull was the next-biggest
+// egress drain after the /api/profile heartbeat). `today` and `dueSoonEnd`
+// come from the browser so the date window stays in the hotel's local time;
+// `stockThreshold` mirrors the user's low-stock setting. Returns, per section:
+//   { count, sig, sample[≤3] }
+// sig is a stable signature of the whole matching set so the per-section
+// "dismiss until something changes" logic in App.jsx keeps working.
+app.get('/api/summary', h(async (req, res) => {
+  const dayRe = /^\d{4}-\d{2}-\d{2}$/;
+  const today = dayRe.test(req.query.today || '') ? req.query.today : localToday();
+  const end = dayRe.test(req.query.dueSoonEnd || '') ? req.query.dueSoonEnd : today;
+  const threshold = Math.max(0, Number(req.query.stockThreshold) || 0);
+
+  const [billRows, prodRows] = await Promise.all([
+    // countsAsSales(bill): not cancelled AND invoiceType in the sales set
+    // (default 'tax-invoice'). "chase" also drops already-paid invoices, which
+    // both overdue and due-soon exclude. The store column is itself `data`;
+    // a bill's own nested payload lives under data->'data'.
+    sql`
+      WITH b AS (
+        SELECT
+          data->>'id'            AS id,
+          data->>'invoiceNumber' AS invno,
+          data->>'clientName'    AS client,
+          NULLIF(data->'data'->'details'->>'dueDate','') AS due,
+          (COALESCE(data->>'status','') <> 'cancelled'
+            AND COALESCE(NULLIF(data->>'invoiceType',''),'tax-invoice')
+                IN ('tax-invoice','bill-of-supply','composition')
+            AND COALESCE(data->>'status','') <> 'paid') AS chase
+        FROM store WHERE collection = 'bills'
+      ),
+      od AS (SELECT * FROM b WHERE chase AND due IS NOT NULL AND due < ${today}),
+      ds AS (SELECT * FROM b WHERE chase AND due IS NOT NULL AND due >= ${today} AND due <= ${end})
+      SELECT
+        (SELECT COUNT(*) FROM od) AS overdue_count,
+        (SELECT string_agg(COALESCE(invno, id), '|' ORDER BY COALESCE(invno, id)) FROM od) AS overdue_sig,
+        (SELECT json_agg(invno) FROM (SELECT invno, due FROM od ORDER BY due LIMIT 3) s) AS overdue_sample,
+        (SELECT COUNT(*) FROM ds) AS duesoon_count,
+        (SELECT string_agg(COALESCE(invno, id), '|' ORDER BY COALESCE(invno, id)) FROM ds) AS duesoon_sig,
+        (SELECT json_agg(json_build_object('invoiceNumber', invno, 'clientName', client))
+           FROM (SELECT invno, client, due FROM ds ORDER BY due LIMIT 3) s) AS duesoon_sample
+    `,
+    // lowStock: non-service products whose numeric stock <= threshold. Missing
+    // or non-numeric stock is treated as 999 (never low), matching the app's
+    // `(p.stock ?? 999)`.
+    sql`
+      WITH p AS (
+        SELECT data->>'id' AS id, data->>'name' AS name,
+          CASE WHEN data->>'stock' ~ '^-?[0-9]+(\\.[0-9]+)?$'
+               THEN (data->>'stock')::numeric ELSE NULL END AS stock
+        FROM store
+        WHERE collection = 'products' AND COALESCE(data->>'isService','') <> 'true'
+      ),
+      low AS (SELECT * FROM p WHERE COALESCE(stock, 999) <= ${threshold})
+      SELECT
+        (SELECT COUNT(*) FROM low) AS low_count,
+        (SELECT string_agg(COALESCE(id, name) || ':' || COALESCE(stock::text, ''), '|'
+                  ORDER BY COALESCE(id, name)) FROM low) AS low_sig,
+        (SELECT json_agg(json_build_object('name', name, 'stock', stock))
+           FROM (SELECT name, stock FROM low ORDER BY stock NULLS LAST LIMIT 3) s) AS low_sample
+    `,
+  ]);
+
+  const br = billRows[0] || {};
+  const pr = prodRows[0] || {};
+  res.json({
+    overdue:  { count: Number(br.overdue_count) || 0, sig: br.overdue_sig || '', sample: br.overdue_sample || [] },
+    dueSoon:  { count: Number(br.duesoon_count) || 0, sig: br.duesoon_sig || '', sample: br.duesoon_sample || [] },
+    lowStock: { count: Number(pr.low_count) || 0,     sig: pr.low_sig || '',     sample: pr.low_sample || [] },
+  });
+}));
 
 function requireAuth(req, res, next) {
   if (!process.env.APP_PASSWORD) { req.appRole = 'admin'; req.appUserId = 'dev'; return next(); } // not configured → open (dev)

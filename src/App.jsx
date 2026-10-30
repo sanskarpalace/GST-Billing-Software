@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu, BedDouble, LogOut } from 'lucide-react';
-import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus, getWhoami, logout as apiLogout } from './store';
+import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, getNotificationSummary, runUpdateNow, getLockStatus, getWhoami, logout as apiLogout } from './store';
 
 // Sidebar sections the "manager" role does not see (admin keeps everything).
 // The API also enforces these — hiding is only the UI half.
@@ -9,7 +9,7 @@ import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProd
 // managers land on Front Desk instead and bill events from there.
 const MANAGER_HIDDEN_VIEWS = new Set(['dashboard', 'expenses', 'reports', 'filing', 'incometax', 'settings', 'staff']);
 const managerHome = (role) => (role === 'manager' ? 'frontdesk' : 'dashboard');
-import { isModuleEnabled, getUpcomingFilings, countsAsSales, localToday, toLocalIsoDate, DOCS_URL } from './utils';
+import { isModuleEnabled, getUpcomingFilings, localToday, toLocalIsoDate, DOCS_URL } from './utils';
 // v1.10.4 — Route-level lazy loading. Prior App.jsx synchronously
 // imported all 12 views (~15k LOC combined), so a first-paint on
 // Dashboard downloaded and parsed GSTReturns (1952), InvoiceGenerator
@@ -150,7 +150,16 @@ function App() {
   // Computed from server data on app boot + every 10 minutes; tucked under a
   // bell icon next to dark-mode toggle in the sidebar. Each section is one
   // click away from the relevant page.
-  const [notifications, setNotifications] = useState({ overdue: [], dueSoon: [], lowStock: [], filings: [], autoFire: null });
+  // Each section is { count, sig, sample[≤3] }. Counts/signatures/previews are
+  // computed in SQL by /api/summary (see store.getNotificationSummary) so the
+  // bell poll no longer downloads every bill + product from the database.
+  const [notifications, setNotifications] = useState({
+    overdue: { count: 0, sig: '', sample: [] },
+    dueSoon: { count: 0, sig: '', sample: [] },
+    lowStock: { count: 0, sig: '', sample: [] },
+    filings: { count: 0, sig: '', sample: [] },
+    autoFire: null,
+  });
   const [showNotifs, setShowNotifs] = useState(false);
 
   // v1.10.62 — reported (#53, @sangwanmail-eng): "Notifications should clear
@@ -178,11 +187,13 @@ function App() {
     try { return JSON.parse(localStorage.getItem(DISMISS_KEY) || '{}'); } catch { return {}; }
   });
 
+  // Signatures now come straight from the server (overdue/dueSoon/lowStock) or
+  // are built client-side for the purely local sections (filings, autoFire).
   const notifSignatures = useMemo(() => ({
-    overdue: notifications.overdue.map(b => b.invoiceNumber || b.id).sort().join('|'),
-    dueSoon: notifications.dueSoon.map(b => b.invoiceNumber || b.id).sort().join('|'),
-    lowStock: notifications.lowStock.map(p => `${p.id || p.name}:${p.stock ?? ''}`).sort().join('|'),
-    filings: notifications.filings.map(f => f.label || f.id || String(f)).sort().join('|'),
+    overdue: notifications.overdue.sig,
+    dueSoon: notifications.dueSoon.sig,
+    lowStock: notifications.lowStock.sig,
+    filings: notifications.filings.sig,
     autoFire: notifications.autoFire?.count > 0 ? `autofire:${notifications.autoFire.count}` : '',
   }), [notifications]);
 
@@ -190,10 +201,10 @@ function App() {
   // content is not the exact thing the user already dismissed.
   const isLive = (key) => !!notifSignatures[key] && dismissed[key] !== notifSignatures[key];
 
-  const notifTotal = (isLive('overdue') ? notifications.overdue.length : 0)
-    + (isLive('dueSoon') ? notifications.dueSoon.length : 0)
-    + (isLive('lowStock') ? notifications.lowStock.length : 0)
-    + (isLive('filings') ? notifications.filings.length : 0)
+  const notifTotal = (isLive('overdue') ? notifications.overdue.count : 0)
+    + (isLive('dueSoon') ? notifications.dueSoon.count : 0)
+    + (isLive('lowStock') ? notifications.lowStock.count : 0)
+    + (isLive('filings') ? notifications.filings.count : 0)
     + (isLive('autoFire') ? 1 : 0);
 
   // How many sections are currently showing something that could be cleared.
@@ -210,35 +221,34 @@ function App() {
     let cancelled = false;
     const compute = async () => {
       try {
-        const [bills, products, stockAlertCfg] = await Promise.all([
-          getAllBills().catch(() => []),
-          getAllProducts().catch(() => []),
-          getStockAlertSettings().catch(() => ({ enabled: true, threshold: 5 })),
-        ]);
+        const stockAlertCfg = await getStockAlertSettings().catch(() => ({ enabled: true, threshold: 5 }));
         if (cancelled) return;
         // Local dates: toISOString() is UTC (yesterday in India until 05:30),
         // while the server stamps lastRecurringAutoFire with its local date.
+        // today + dueSoonEnd are computed here (browser-local) and handed to
+        // /api/summary so the overdue / due-soon window stays in the hotel's
+        // timezone even though the counting happens in the database.
         const today = localToday();
         const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 3);
-        const tomorrowStr = toLocalIsoDate(tomorrow);
-        // v1.10.67 (#66 item 12) — never chase payment for a cancelled invoice;
-        // nor for a quotation, proforma, challan or credit note (countsAsSales).
-        const overdue = bills.filter(b => {
-          const d = b.data?.details?.dueDate;
-          return d && d < today && b.status !== 'paid' && countsAsSales(b);
-        });
-        const dueSoon = bills.filter(b => {
-          const d = b.data?.details?.dueDate;
-          return d && d >= today && d <= tomorrowStr && b.status !== 'paid' && countsAsSales(b);
-        });
-        // Honour the user's stock-alert preferences. When disabled, the filter
-        // returns nothing — bell badge drops to 0 for the stock category.
-        // When enabled, use the configured threshold (default 5).
+        const dueSoonEnd = toLocalIsoDate(tomorrow);
         const stockThreshold = Number(stockAlertCfg?.threshold ?? 5);
-        const lowStock = stockAlertCfg?.enabled === false
-          ? []
-          : products.filter(p => !p.isService && (p.stock ?? 999) <= stockThreshold);
-        const filings = getUpcomingFilings().filter(f => f.daysAway <= 10);
+        // v1.10.67 (#66 item 12) — the server applies the same rules: never
+        // chase a cancelled, paid, quotation/proforma/challan/credit-note doc
+        // (countsAsSales). Counts come back SQL-aggregated — no bill/product
+        // download — as { count, sig, sample[≤3] } per section.
+        const summary = await getNotificationSummary({ today, dueSoonEnd, stockThreshold }).catch(() => null);
+        if (cancelled || !summary) return; // offline / server down — keep previous counts
+        const empty = { count: 0, sig: '', sample: [] };
+        // Honour the low-stock master switch client-side (when off, drop the
+        // section entirely regardless of what the summary returned).
+        const lowStock = stockAlertCfg?.enabled === false ? empty : (summary.lowStock || empty);
+        // Filings stay client-side (no DB) — wrapped in the same shape.
+        const filingsList = getUpcomingFilings().filter(f => f.daysAway <= 10);
+        const filings = {
+          count: filingsList.length,
+          sig: filingsList.map(f => f.label || f.id || String(f)).sort().join('|'),
+          sample: filingsList.slice(0, 3),
+        };
         // Recurring auto-fire breadcrumb — set by server.js processDueRecurring().
         // Only "fresh" (today's) auto-fires count as a notification; older ones
         // would otherwise stay sticky forever.
@@ -250,7 +260,7 @@ function App() {
             if (j.value && j.value.date === today && j.value.count > 0) autoFire = j.value;
           }
         } catch { /* fine */ }
-        setNotifications({ overdue, dueSoon, lowStock, filings, autoFire });
+        setNotifications({ overdue: summary.overdue || empty, dueSoon: summary.dueSoon || empty, lowStock, filings, autoFire });
       } catch { /* offline / server down — leave previous counts */ }
     };
     compute();
@@ -1200,9 +1210,9 @@ function App() {
                   <button type="button" className="notice notice-danger" onClick={() => { setShowNotifs(false); setCurrentView('dashboard'); }} style={{ cursor: 'pointer', border: 'none', textAlign: 'left' }}>
                     <span className="notice-icon">⚠</span>
                     <div style={{ flex: 1 }}>
-                      <strong>{notifications.overdue.length} overdue invoice{notifications.overdue.length !== 1 ? 's' : ''}</strong>
+                      <strong>{notifications.overdue.count} overdue invoice{notifications.overdue.count !== 1 ? 's' : ''}</strong>
                       <div style={{ fontSize: '0.72rem', opacity: 0.85, marginTop: '0.2rem' }}>
-                        {notifications.overdue.slice(0, 3).map(b => b.invoiceNumber).join(' · ')}{notifications.overdue.length > 3 ? ` · +${notifications.overdue.length - 3} more` : ''}
+                        {notifications.overdue.sample.filter(Boolean).join(' · ')}{notifications.overdue.count > 3 ? ` · +${notifications.overdue.count - 3} more` : ''}
                       </div>
                     </div>
                   </button>
@@ -1211,9 +1221,9 @@ function App() {
                   <button type="button" className="notice notice-warn" onClick={() => { setShowNotifs(false); setCurrentView('dashboard'); }} style={{ cursor: 'pointer', border: 'none', textAlign: 'left' }}>
                     <span className="notice-icon">⏰</span>
                     <div style={{ flex: 1 }}>
-                      <strong>{notifications.dueSoon.length} invoice{notifications.dueSoon.length !== 1 ? 's' : ''} due in next 3 days</strong>
+                      <strong>{notifications.dueSoon.count} invoice{notifications.dueSoon.count !== 1 ? 's' : ''} due in next 3 days</strong>
                       <div style={{ fontSize: '0.72rem', opacity: 0.85, marginTop: '0.2rem' }}>
-                        {notifications.dueSoon.slice(0, 3).map(b => `${b.invoiceNumber} (${b.clientName})`).join(' · ')}
+                        {notifications.dueSoon.sample.map(b => `${b.invoiceNumber} (${b.clientName})`).join(' · ')}
                       </div>
                     </div>
                   </button>
@@ -1222,9 +1232,9 @@ function App() {
                   <button type="button" className="notice notice-info" onClick={() => { setShowNotifs(false); setCurrentView('filing'); }} style={{ cursor: 'pointer', border: 'none', textAlign: 'left' }}>
                     <span className="notice-icon">📋</span>
                     <div style={{ flex: 1 }}>
-                      <strong>{notifications.filings.length} GST filing{notifications.filings.length !== 1 ? 's' : ''} due in next 10 days</strong>
+                      <strong>{notifications.filings.count} GST filing{notifications.filings.count !== 1 ? 's' : ''} due in next 10 days</strong>
                       <div style={{ fontSize: '0.72rem', opacity: 0.85, marginTop: '0.2rem' }}>
-                        {notifications.filings.slice(0, 3).map(f => `${f.label} (${f.daysAway === 0 ? 'today' : f.daysAway + 'd'})`).join(' · ')}
+                        {notifications.filings.sample.map(f => `${f.label} (${f.daysAway === 0 ? 'today' : f.daysAway + 'd'})`).join(' · ')}
                       </div>
                     </div>
                   </button>
@@ -1233,9 +1243,9 @@ function App() {
                   <button type="button" className="notice notice-note" onClick={() => { setShowNotifs(false); setCurrentView('inventory'); }} style={{ cursor: 'pointer', border: 'none', textAlign: 'left' }}>
                     <span className="notice-icon">📦</span>
                     <div style={{ flex: 1 }}>
-                      <strong>{notifications.lowStock.length} product{notifications.lowStock.length !== 1 ? 's' : ''} low on stock</strong>
+                      <strong>{notifications.lowStock.count} product{notifications.lowStock.count !== 1 ? 's' : ''} low on stock</strong>
                       <div style={{ fontSize: '0.72rem', opacity: 0.85, marginTop: '0.2rem' }}>
-                        {notifications.lowStock.slice(0, 3).map(p => `${p.name} (${p.stock} left)`).join(' · ')}
+                        {notifications.lowStock.sample.map(p => `${p.name} (${p.stock} left)`).join(' · ')}
                       </div>
                     </div>
                   </button>

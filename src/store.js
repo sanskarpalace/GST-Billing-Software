@@ -207,6 +207,20 @@ export const getAllBills = async () => {
   return apiFetch(`${API}/bills`);
 };
 
+// Notification-badge counts, computed server-side in SQL (see /api/summary).
+// Returns { overdue, dueSoon, lowStock }, each { count, sig, sample[≤3] }.
+// Pass today + dueSoonEnd (browser-local YYYY-MM-DD) so the date window stays
+// in the hotel's timezone, and the low-stock threshold. This replaced a poll
+// that downloaded every bill + product just to count a few badges.
+export const getNotificationSummary = ({ today, dueSoonEnd, stockThreshold } = {}) => {
+  const qs = new URLSearchParams({
+    today: today || '',
+    dueSoonEnd: dueSoonEnd || '',
+    stockThreshold: String(stockThreshold ?? 5),
+  });
+  return apiFetch(`${API}/summary?${qs.toString()}`);
+};
+
 export const deleteBill = async (id) => {
   return apiFetch(`${API}/bills/${encodeURIComponent(id)}`, { method: 'DELETE' });
 };
