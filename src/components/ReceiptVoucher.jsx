@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Receipt, Plus, Trash2, Search, Printer, Pencil } from 'lucide-react';
-import { getAllReceipts, saveReceipt, deleteReceipt, getAllBills, getProfile, getNextInvoiceNumber, saveBill, getAllClients, saveClient } from '../store';
+import { getAllReceipts, saveReceipt, deleteReceipt, getAllBills, getProfile, getNextInvoiceNumber, saveBill, getAllClients, saveClient, getAllBookings } from '../store';
 import { formatCurrency, numberToWords, belongsToProfile, isUnassignedToBusiness, countsAsSales, businessKeyOf, localToday, amountDue, paymentStatusFor, isCancelledBill } from '../utils';
 import UnassignedBanner from './UnassignedBanner';
 import { toast } from './Toast';
@@ -20,6 +20,8 @@ const emptyForm = {
   paymentMode: 'Bank Transfer',
   referenceNo: '',
   againstInvoice: '',
+  eventId: '',
+  eventName: '',
   receivedBy: '',
   note: '',
 };
@@ -34,6 +36,7 @@ export default function ReceiptVoucher() {
   const [previewReceipt, setPreviewReceipt] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [clients, setClients] = useState([]);
+  const [eventBlocks, setEventBlocks] = useState([]);
   const [showGuestSuggest, setShowGuestSuggest] = useState(false);
   const receiptRef = useRef(null);
   // v1.10.74 - the number previewed when the form opened, so save can tell
@@ -42,8 +45,9 @@ export default function ReceiptVoucher() {
 
   const loadData = async () => {
     try {
-      const [recs, bls, prof, cls] = await Promise.all([getAllReceipts(), getAllBills(), getProfile(), getAllClients()]);
+      const [recs, bls, prof, cls, bkgs] = await Promise.all([getAllReceipts(), getAllBills(), getProfile(), getAllClients(), getAllBookings()]);
       setClients(cls || []);
+      setEventBlocks((bkgs || []).filter(b => b.kind === 'block' && b.status !== 'cancelled'));
       // v1.10.66 (#64 item 2) — receipts belong to one business, like its
       // invoices. Both lists are narrowed: the receipts shown, and the
       // invoices offered in Quick Select and matched by "Against Invoice".
@@ -107,6 +111,8 @@ export default function ReceiptVoucher() {
       paymentMode: rcp.paymentMode || 'Bank Transfer',
       referenceNo: rcp.referenceNo || '',
       againstInvoice: rcp.againstInvoice || '',
+      eventId: rcp.eventId || '',
+      eventName: rcp.eventName || '',
       receivedBy: rcp.receivedBy || '',
       note: rcp.note || '',
     });
@@ -432,6 +438,15 @@ export default function ReceiptVoucher() {
                 <input type="text" className="form-input" value={form.againstInvoice} onChange={e => updateField('againstInvoice', e.target.value)} placeholder="e.g. INV/2025-26/0001" />
               </div>
               <div className="form-group">
+                <label className="form-label">Against Event (optional)</label>
+                <select className="form-input" value={form.eventId}
+                  onChange={e => { const b = eventBlocks.find(x => x.id === e.target.value); setForm(f => ({ ...f, eventId: e.target.value, eventName: b ? (b.eventName || '') : '' })); }}>
+                  <option value="">— None —</option>
+                  {eventBlocks.map(b => <option key={b.id} value={b.id}>{b.eventName || 'Event'} · {b.checkIn}{b.checkOut !== b.checkIn ? `–${b.checkOut}` : ''}</option>)}
+                  {form.eventId && !eventBlocks.some(b => b.id === form.eventId) && form.eventName && <option value={form.eventId}>{form.eventName}</option>}
+                </select>
+              </div>
+              <div className="form-group">
                 <label className="form-label">Received By (optional)</label>
                 <input type="text" className="form-input" value={form.receivedBy} onChange={e => updateField('receivedBy', e.target.value)} placeholder="Staff who took the payment" />
               </div>
@@ -466,6 +481,7 @@ export default function ReceiptVoucher() {
             <div className="receipt-row"><span className="receipt-label">Payment Mode:</span><span className="receipt-value">{previewReceipt.paymentMode}</span></div>
             {previewReceipt.referenceNo && <div className="receipt-row"><span className="receipt-label">Reference No:</span><span className="receipt-value">{previewReceipt.referenceNo}</span></div>}
             {previewReceipt.againstInvoice && <div className="receipt-row"><span className="receipt-label">Against Invoice:</span><span className="receipt-value">{previewReceipt.againstInvoice}</span></div>}
+            {previewReceipt.eventName && <div className="receipt-row"><span className="receipt-label">For Event:</span><span className="receipt-value">{previewReceipt.eventName}</span></div>}
             <div className="receipt-amount">{formatCurrency(previewReceipt.amount)}</div>
             <p className="receipt-words">{numberToWords(previewReceipt.amount)}</p>
             {previewReceipt.note && <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Note: {previewReceipt.note}</p>}

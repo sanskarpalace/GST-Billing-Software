@@ -166,7 +166,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const occupiedCount = guestRooms.filter((r) => roomStatus(r).key === 'occupied').length;
 
   // Board is grouped by floor in this order, then any others.
-  const FLOOR_ORDER = ['Ground', 'First', 'Second'];
+  const FLOOR_ORDER = ['Ground', 'First', 'Second', 'Outdoor'];
   const byNumber = (a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true });
   const floorsPresent = [...new Set(rooms.map((r) => r.floor || 'Other'))];
   const orderedFloors = [...FLOOR_ORDER.filter((f) => floorsPresent.includes(f)), ...floorsPresent.filter((f) => !FLOOR_ORDER.includes(f))];
