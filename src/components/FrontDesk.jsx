@@ -29,6 +29,9 @@ const coversDay = (b, day) => {
   return b.checkIn <= day && day < b.checkOut;
 };
 const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
+// Group key for event blocks: a unique eventId when present (robust against two
+// events sharing a name), else fall back to the name for older blocks.
+const eventKey = (b) => b.eventId || ('n:' + String(b.eventName || 'Event').trim());
 
 const STATUS = {
   vacant:   { label: 'Vacant',   color: '#059669', bg: 'rgba(5,150,105,0.10)' },
@@ -170,13 +173,13 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const blocks = bookings.filter((b) => isActive(b) && b.kind === 'block').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
   // Group blocks into events (same name), with span + distinct room count.
   const eventGroups = Object.values(blocks.reduce((acc, b) => {
-    const key = (b.eventName || 'Event').trim();
-    (acc[key] = acc[key] || { name: key, items: [] }).items.push(b);
+    const key = eventKey(b);
+    (acc[key] = acc[key] || { key, name: (b.eventName || 'Event').trim(), eventId: b.eventId, items: [] }).items.push(b);
     return acc;
   }, {})).map((g) => {
     const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
     const split = splitSpaces([...new Set(items.flatMap((b) => b.roomIds || []))]);
-    return { name: g.name, items, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, venueCount: split.venues.length, notes: items[0].notes };
+    return { ...g, items, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, venueCount: split.venues.length, notes: items[0].notes };
   }).sort((a, c) => (a.from || '').localeCompare(c.from || ''));
   const filteredEvents = eventGroups
     .filter((g) => !blockSearch.trim() || g.name.toLowerCase().includes(blockSearch.trim().toLowerCase()))
@@ -337,7 +340,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
             {filteredEvents.length === 0 ? (
               <div className="glass-panel empty-state"><CalendarDays size={40} /><p>No events match.</p></div>
             ) : filteredEvents.map((g) => (
-              <button key={g.name} type="button" className="glass-panel" onClick={() => setEventDetail(g.name)}
+              <button key={g.key} type="button" className="glass-panel" onClick={() => setEventDetail(g.key)}
                 style={{ width: '100%', textAlign: 'left', cursor: 'pointer', padding: '0.85rem 1rem', marginBottom: '0.6rem', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <strong style={{ fontSize: '0.95rem' }}>🎉 {g.name}</strong>
@@ -398,14 +401,15 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
-      {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} editBlock={(blockModal && blockModal.editBlock) || null} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
+      {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} editBlock={(blockModal && blockModal.editBlock) || null} addEvent={(blockModal && blockModal.addEvent) || null} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
       {eventDetail && (() => {
-        const days = blocks.filter((b) => (b.eventName || 'Event').trim() === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+        const days = blocks.filter((b) => eventKey(b) === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+        const evName = days[0]?.eventName || 'Event';
         return (
           <div className="modal-overlay" onClick={() => setEventDetail(null)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
               <div className="flex justify-between items-center mb-4">
-                <h3 className="section-title" style={{ margin: 0 }}>🎉 {eventDetail}</h3>
+                <h3 className="section-title" style={{ margin: 0 }}>🎉 {evName}</h3>
                 <button className="icon-btn" onClick={() => setEventDetail(null)}><X size={18} /></button>
               </div>
               {days.length === 0 ? (
@@ -434,6 +438,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                 ))}
               </>)}
               <div className="flex gap-2 justify-end mt-4">
+                {days.length > 0 && (
+                  <button className="btn btn-secondary" onClick={() => { setBlockModal({ addEvent: { eventId: days[0].eventId, eventName: evName } }); setEventDetail(null); }}><Plus size={14} /> Add day</button>
+                )}
                 <button className="btn btn-primary" onClick={() => setEventDetail(null)}>Done</button>
               </div>
             </div>
@@ -588,10 +595,10 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
 }
 
 // ---------------- Event-block modal (bulk) ----------------
-function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = null, onClose, onSaved }) {
+function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = null, addEvent = null, onClose, onSaved }) {
   const today = localToday();
   const [form, setForm] = useState({
-    eventName: editBlock?.eventName || '',
+    eventName: editBlock?.eventName || addEvent?.eventName || '',
     checkIn: editBlock?.checkIn || today,
     checkOut: editBlock?.checkOut || isoAddDays(today, 1),
     notes: editBlock?.notes || '',
@@ -609,7 +616,8 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = nu
     if (!form.checkIn || !form.checkOut || form.checkOut < form.checkIn) { toast('Pick a valid date range', 'warning'); return; }
     setSaving(true);
     try {
-      const ok = await saveWithOverride({ ...(editBlock || {}), kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
+      const eventId = editBlock ? editBlock.eventId : (addEvent ? addEvent.eventId : 'evt_' + Date.now());
+      const ok = await saveWithOverride({ ...(editBlock || {}), kind: 'block', status: 'reserved', eventId, eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
       if (!ok) { setSaving(false); return; }
       toast(editBlock ? `Updated "${form.eventName.trim()}"` : `Blocked ${selected.size} room${selected.size > 1 ? 's' : ''} for ${form.eventName.trim()}`, 'success'); onSaved();
     } catch { toast('Save failed', 'error'); setSaving(false); }
@@ -617,9 +625,9 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = nu
 
   return (
     <div className="modal-overlay"><div className="modal-content" style={{ maxWidth: 560 }}>
-      <div className="flex justify-between items-center mb-4"><h3 className="section-title" style={{ margin: 0 }}>{editBlock ? 'Edit event block' : 'Block rooms for an event'}</h3><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
+      <div className="flex justify-between items-center mb-4"><h3 className="section-title" style={{ margin: 0 }}>{editBlock ? 'Edit event block' : addEvent ? `Add a day to ${addEvent.eventName}` : 'Block rooms for an event'}</h3><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="form-group full-width"><label className="form-label">Event name *</label><input className="form-input" value={form.eventName} onChange={(e) => setForm({ ...form, eventName: e.target.value })} placeholder="e.g. Sharma Wedding, Corporate Conference" /></div>
+        <div className="form-group full-width"><label className="form-label">Event name *</label><input className="form-input" value={form.eventName} readOnly={!!addEvent} style={addEvent ? { opacity: 0.7, cursor: 'not-allowed' } : undefined} onChange={(e) => setForm({ ...form, eventName: e.target.value })} placeholder="e.g. Sharma Wedding, Corporate Conference" /></div>
         <div className="form-group"><label className="form-label">From *</label><input type="date" className="form-input" value={form.checkIn} onChange={(e) => setForm({ ...form, checkIn: e.target.value })} /></div>
         <div className="form-group"><label className="form-label">To *</label><input type="date" className="form-input" value={form.checkOut} onChange={(e) => setForm({ ...form, checkOut: e.target.value })} /></div>
         <div className="form-group full-width"><label className="form-label">Notes</label><input className="form-input" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} placeholder="Contact, catering, etc." /></div>
@@ -641,7 +649,7 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = nu
         )}
       </div>
       <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{(form.checkIn && form.checkOut && form.checkOut >= form.checkIn) ? `${nights + 1} day${nights + 1 > 1 ? 's' : ''} blocked` : 'Pick a valid date range'}</div>
-      <div className="flex gap-2 justify-end mt-4"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>{editBlock ? 'Save changes' : 'Block rooms'}</button></div>
+      <div className="flex gap-2 justify-end mt-4"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>{editBlock ? 'Save changes' : addEvent ? 'Add day' : 'Block rooms'}</button></div>
     </div></div>
   );
 }
