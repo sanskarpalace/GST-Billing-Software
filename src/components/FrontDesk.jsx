@@ -300,23 +300,39 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
           )}
         </div>
       ) : tab === 'blocks' ? (
-        <div className="glass-panel" style={{ padding: 0 }}>
+        <div>
           {blocks.length === 0 ? (
-            <div className="empty-state"><CalendarDays size={48} /><p>No event blocks. Hold rooms for a wedding, conference, etc.</p><button className="btn btn-primary" onClick={() => setBlockModal(true)}><Plus size={18} /> Block for event</button></div>
+            <div className="glass-panel empty-state"><CalendarDays size={48} /><p>No event blocks. Hold rooms for a wedding, conference, etc.</p><button className="btn btn-primary" onClick={() => setBlockModal(true)}><Plus size={18} /> Block for event</button></div>
           ) : (
-            <div className="table-scroll"><table className="data-table"><thead><tr><th>Event</th><th>Rooms</th><th>From</th><th>To</th><th>Days</th><th className="col-center">Actions</th></tr></thead>
-              <tbody>{blocks.map((b) => (
-                <tr key={b.id}>
-                  <td className="font-medium">🎉 {b.eventName || 'Event'}{b.notes ? <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{b.notes}</div> : null}</td>
-                  <td>{(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</td>
-                  <td>{fmtDate(b.checkIn)}</td>
-                  <td>{fmtDate(b.checkOut)}</td>
-                  <td>{nightsBetween(b.checkIn, b.checkOut) + 1}</td>
-                  <td><div className="table-actions" style={{ justifyContent: 'center' }}>
-                    <button className="icon-btn icon-btn-red" title="Remove block" onClick={() => removeBooking(b, 'Event block')}><Trash2 size={14} /></button>
-                  </div></td>
-                </tr>
-              ))}</tbody></table></div>
+            Object.values(blocks.reduce((acc, b) => {
+              const key = (b.eventName || 'Event').trim();
+              (acc[key] = acc[key] || { name: key, items: [] }).items.push(b);
+              return acc;
+            }, {}))
+              .sort((a, c) => (a.items[0].checkIn || '').localeCompare(c.items[0].checkIn || ''))
+              .map((g) => {
+                const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+                const from = items[0].checkIn, to = items[items.length - 1].checkOut;
+                return (
+                  <div key={g.name} className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '0.75rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                      <strong style={{ fontSize: '1rem' }}>🎉 {g.name}</strong>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{fmtDate(from)}{to !== from ? ` – ${fmtDate(to)}` : ''} · {items.length} day{items.length > 1 ? 's' : ''}</span>
+                    </div>
+                    {items[0].notes && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>{items[0].notes}</div>}
+                    {items.map((b) => (
+                      <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0.4rem 0', borderTop: '1px solid var(--border)', fontSize: '0.82rem', marginTop: 6 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <strong style={{ color: 'var(--text-muted)', marginRight: 6 }}>{fmtDate(b.checkIn)}{b.checkOut !== b.checkIn ? `–${fmtDate(b.checkOut)}` : ''}</strong>
+                          <span>{(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</span>
+                          <span style={{ color: 'var(--text-muted)' }}> · {(b.roomIds || []).length} rooms</span>
+                        </div>
+                        <button className="icon-btn icon-btn-red" title="Remove this day" onClick={() => removeBooking(b, 'Event block')}><Trash2 size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })
           )}
         </div>
       ) : tab === 'history' ? (
