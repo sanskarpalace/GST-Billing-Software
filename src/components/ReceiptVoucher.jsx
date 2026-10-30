@@ -487,14 +487,14 @@ export default function ReceiptVoucher() {
             {previewReceipt.note && <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Note: {previewReceipt.note}</p>}
             <div className="receipt-footer">
               <div className="receipt-sig">
-                <div style={{ height: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  {previewReceipt.receivedBy && <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{previewReceipt.receivedBy}</span>}
+                <div style={{ height: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 6 }}>
+                  {previewReceipt.receivedBy && <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{previewReceipt.receivedBy}</span>}
                 </div>
                 <div className="receipt-sig-line"></div><span className="receipt-sig-label">Received By</span>
               </div>
               <div className="receipt-sig">
-                <div style={{ height: 40, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-                  {profile.signature && <img src={profile.signature} alt="Signature" style={{ maxHeight: 40, maxWidth: 170, objectFit: 'contain' }} />}
+                <div style={{ height: 64, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 6 }}>
+                  {profile.signature && <img src={profile.signature} alt="Signature" style={{ maxHeight: 58, maxWidth: 190, objectFit: 'contain' }} />}
                 </div>
                 <div className="receipt-sig-line"></div><span className="receipt-sig-label">Authorized Signatory</span>
               </div>
