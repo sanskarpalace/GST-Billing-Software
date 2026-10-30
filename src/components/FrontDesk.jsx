@@ -85,6 +85,12 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   useEffect(() => { load(); }, []);
 
   const roomById = (id) => rooms.find((r) => r.id === id);
+  // Split a list of space ids into guest rooms vs. venues (halls/outdoor).
+  const splitSpaces = (ids) => {
+    const roomsOut = [], venues = [];
+    for (const id of ids || []) { const r = roomById(id); if (!r) continue; (r.isHall ? venues : roomsOut).push(r.number); }
+    return { rooms: roomsOut, venues };
+  };
   const roomBooking = (roomId) => bookings.find((b) => isActive(b) && (b.roomIds || []).includes(roomId) && coversDay(b, today));
   const roomStatus = (room) => {
     const b = roomBooking(room.id);
@@ -169,7 +175,8 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
     return acc;
   }, {})).map((g) => {
     const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
-    return { name: g.name, items, from: items[0].checkIn, to: items[items.length - 1].checkOut, totalRooms: new Set(items.flatMap((b) => b.roomIds || [])).size, notes: items[0].notes };
+    const split = splitSpaces([...new Set(items.flatMap((b) => b.roomIds || []))]);
+    return { name: g.name, items, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, venueCount: split.venues.length, notes: items[0].notes };
   }).sort((a, c) => (a.from || '').localeCompare(c.from || ''));
   const filteredEvents = eventGroups
     .filter((g) => !blockSearch.trim() || g.name.toLowerCase().includes(blockSearch.trim().toLowerCase()))
@@ -336,7 +343,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                   <strong style={{ fontSize: '0.95rem' }}>🎉 {g.name}</strong>
                   {g.to < today && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>(past)</span>}
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.totalRooms} rooms
+                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.roomCount} room{g.roomCount !== 1 ? 's' : ''}{g.venueCount > 0 ? ` · ${g.venueCount} venue${g.venueCount !== 1 ? 's' : ''}` : ''}
                   </div>
                 </div>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>View ›</span>
@@ -414,10 +421,15 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                         <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => removeBooking(b, 'Event block')}><Trash2 size={13} /> Remove day</button>
                       </div>
                     </div>
-                    <div style={{ fontSize: '0.82rem', marginTop: 4 }}>
-                      {(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}
-                      <span style={{ color: 'var(--text-muted)' }}> · {(b.roomIds || []).length} rooms</span>
-                    </div>
+                    {(() => {
+                      const s = splitSpaces(b.roomIds);
+                      return (
+                        <div style={{ fontSize: '0.82rem', marginTop: 4 }}>
+                          <div><span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Rooms ({s.rooms.length}):</span> {s.rooms.join(', ') || '—'}</div>
+                          {s.venues.length > 0 && <div style={{ marginTop: 2 }}><span style={{ color: '#7c3aed', fontWeight: 600 }}>Venues ({s.venues.length}):</span> {s.venues.join(', ')}</div>}
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </>)}
