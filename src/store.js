@@ -269,10 +269,18 @@ export const saveBooking = async (b, { force = false } = {}) => {
 };
 export const deleteBooking = async (id) => apiFetch(`${API}/bookings/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
-// ---- Who is logged in (role) ----
+// ---- Session auth (cookie-based login / logout) ----
+// whoami tells the app who's logged in and whether a login is even required
+// (local dev with no APP_PASSWORD is open → authRequired:false). On a hard
+// error (e.g. the local file server with no /api/whoami) we assume open dev.
 export const getWhoami = async () => {
-  try { return await apiFetch(`${API}/whoami`); } catch { return { role: 'admin' }; }
+  try { return await apiFetch(`${API}/whoami`); } catch { return { role: 'admin', authRequired: false }; }
 };
+// Log in with a password; the server sets an HttpOnly session cookie and
+// returns the resolved role. Throws (err.status 401) on a wrong password.
+export const login = (password) => apiFetch(`${API}/login`, { method: 'POST', body: JSON.stringify({ password }) });
+// Clear the session cookie. Best-effort — never blocks the UI from logging out.
+export const logout = async () => { try { await apiFetch(`${API}/logout`, { method: 'POST' }); } catch { /* ignore */ } };
 
 // ---- GSTIN → registered name lookup ----
 // Best-effort. Resolves to { ok, legalName, tradeName, address } when the

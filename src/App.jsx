@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react';
 import { Home, FileText, Settings, Plus, Users, Package, BarChart3, Wallet, RefreshCw, Receipt, BookOpen, Moon, Sun, Download, X, ShoppingCart, ChevronDown, Building2, Pencil, HelpCircle, Search, Command, Bell, Calculator, Menu, BedDouble, LogOut } from 'lucide-react';
-import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus, getWhoami } from './store';
+import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProducts, getStockAlertSettings, getAllClients, runUpdateNow, getLockStatus, getWhoami, logout as apiLogout } from './store';
 
 // Sidebar sections the "manager" role does not see (admin keeps everything).
 // The API also enforces these — hiding is only the UI half.
@@ -42,6 +42,7 @@ const SupportView = lazy(() => import('./components/SupportView'));
 import StarBanner from './components/StarBanner';
 import AppFooter from './components/AppFooter';
 import LockButton from './components/LockButton';
+import LoginScreen from './components/LoginScreen';
 import { lockNow } from './utils/appLock';
 import { getPrintSettings } from './utils/printSettings';
 
@@ -103,6 +104,7 @@ function App() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [canInstall, setCanInstall] = useState(false);
   const [role, setRole] = useState('admin'); // 'admin' | 'manager' — from /api/whoami
+  const [auth, setAuth] = useState('checking'); // 'checking' | 'in' | 'out' — session gate
   const [serverDown, setServerDown] = useState(false);
   const deferredPrompt = useRef(null);
   const retryTimer = useRef(null);
@@ -376,8 +378,16 @@ function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // Who's logged in — hides admin-only sections for the manager role.
-  useEffect(() => { getWhoami().then((w) => setRole(w?.role || 'admin')).catch(() => {}); }, []);
+  // Who's logged in — decides the login gate and hides admin-only sections for
+  // the manager role. If the server requires auth and there's no session, show
+  // the login screen; otherwise (incl. open local dev) go straight in.
+  useEffect(() => {
+    getWhoami().then((w) => {
+      if (w?.authRequired && !w?.role) { setAuth('out'); return; }
+      setRole(w?.role || 'admin');
+      setAuth('in');
+    }).catch(() => { setAuth('in'); });
+  }, []);
 
   useEffect(() => {
     sessionStorage.setItem('gst_currentView', currentView);
@@ -495,17 +505,13 @@ function App() {
     deferredPrompt.current = null;
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (!window.confirm('Log out of Sanskar Palace Billing?')) return;
-    // HTTP Basic Auth has no real logout, so overwrite the browser's cached
-    // credential with a throwaway one (a request the server rejects), then
-    // reload — the browser then re-prompts for a fresh login.
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', '/api/whoami?logout=1', false, 'loggedout', String(Date.now()));
-      xhr.send();
-    } catch { /* a 401 here is expected */ }
-    window.location.replace('/');
+    // Real logout now: clear the session cookie on the server, then reload.
+    // whoami then returns no role and the login screen shows — works on every
+    // browser (the old Basic Auth trick did nothing in Chrome).
+    await apiLogout();
+    window.location.reload();
   };
 
   const dismissInstallBanner = () => {
@@ -755,6 +761,21 @@ function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [showPalette, paletteIdx, filteredPalette]);
+
+  // Session gate: block the app until we know who's logged in. On 'out', show
+  // the login screen; a successful login reloads so all data effects re-run
+  // with the session cookie in place.
+  if (auth === 'checking') {
+    return <div style={{ position: 'fixed', inset: 0, background: '#0b0b0b' }} />;
+  }
+  if (auth === 'out') {
+    return (
+      <>
+        <LoginScreen onLoggedIn={() => window.location.reload()} />
+        <ToastContainer />
+      </>
+    );
+  }
 
   if (serverDown) {
     return (

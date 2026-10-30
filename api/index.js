@@ -31,31 +31,93 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 
 // ---------------------------------------------------------------------------
-// Login gate + roles. Two accounts:
+// Login gate + roles — cookie session. Two accounts:
 //   admin   / APP_PASSWORD        → full access  (user name from APP_USER)
 //   manager / MANAGER_PASSWORD    → front-desk only (restrictions below)
-// Health check stays open for uptime monitors.
+// Login (password-only) sets a signed HttpOnly cookie; logout clears it. No
+// Basic Auth box, so "Log out" actually works — Basic Auth credentials can't be
+// cleared from JS in Chrome, which is why the old logout button did nothing.
+// Health check and the auth endpoints stay open for uptime monitors + login.
 // ---------------------------------------------------------------------------
 const safeEq = (a, b) => !!a && !!b && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
-function roleFor(user, pass) {
-  const admin = process.env.APP_PASSWORD;
-  const adminUser = process.env.APP_USER || 'admin';
-  const mgr = process.env.MANAGER_PASSWORD;
-  if (admin && user === adminUser && safeEq(pass, admin)) return 'admin';
-  if (mgr && user === 'manager' && safeEq(pass, mgr)) return 'manager';
+
+// The login form is password-only; the password alone determines the role.
+function roleForPassword(pass) {
+  if (process.env.APP_PASSWORD && safeEq(pass, process.env.APP_PASSWORD)) return 'admin';
+  if (process.env.MANAGER_PASSWORD && safeEq(pass, process.env.MANAGER_PASSWORD)) return 'manager';
   return null;
 }
+
+// --- Signed session cookie (HMAC-SHA256 over "role.expiry") ---
+const SESSION_COOKIE = 'sp_session';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+// Secret: SESSION_SECRET if set, else derived from the passwords so it needs no
+// extra config (rotating a password invalidates existing sessions — fine).
+function sessionSecret() {
+  return process.env.SESSION_SECRET
+    || `${process.env.APP_PASSWORD || ''}|${process.env.MANAGER_PASSWORD || ''}|sp-session-v1`;
+}
+function signSession(role) {
+  const payload = `${role}.${Date.now() + SESSION_TTL_MS}`;
+  const sig = crypto.createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+function verifySession(token) {
+  if (!token) return null;
+  const parts = String(token).split('.');
+  if (parts.length !== 3) return null;
+  const [role, expStr, sig] = parts;
+  const expect = crypto.createHmac('sha256', sessionSecret()).update(`${role}.${expStr}`).digest('base64url');
+  if (!safeEq(sig, expect)) return null;
+  const exp = parseInt(expStr, 10);
+  if (!isFinite(exp) || Date.now() > exp) return null;
+  if (role !== 'admin' && role !== 'manager') return null;
+  return role;
+}
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return null;
+}
+function cookieAttrs(req, maxAgeSec) {
+  const https = String(req.headers['x-forwarded-proto'] || '').includes('https');
+  const a = ['Path=/', 'HttpOnly', 'SameSite=Lax'];
+  if (https) a.push('Secure');
+  a.push(`Max-Age=${maxAgeSec}`);
+  return a;
+}
+function setSession(req, res, role) {
+  res.append('Set-Cookie', [`${SESSION_COOKIE}=${signSession(role)}`, ...cookieAttrs(req, Math.floor(SESSION_TTL_MS / 1000))].join('; '));
+}
+function clearSession(req, res) {
+  res.append('Set-Cookie', [`${SESSION_COOKIE}=`, ...cookieAttrs(req, 0)].join('; '));
+}
+
+// Public auth endpoints — registered BEFORE requireAuth so they're reachable
+// while logged out.
+app.post('/api/login', (req, res) => {
+  const role = roleForPassword((req.body && req.body.password) || '');
+  if (!role) return res.status(401).json({ error: 'Incorrect password', code: 'bad-credentials' });
+  setSession(req, res, role);
+  res.json({ role });
+});
+app.post('/api/logout', (req, res) => { clearSession(req, res); res.json({ ok: true }); });
+// whoami is public: reports the current role (or null) and whether login is
+// required at all, so the SPA can choose between the login screen and the app.
+app.get('/api/whoami', (req, res) => {
+  const authRequired = !!process.env.APP_PASSWORD;
+  const role = authRequired ? verifySession(readCookie(req, SESSION_COOKIE)) : 'admin';
+  res.json({ role: role || null, authRequired, user: role === 'manager' ? 'manager' : (role ? (process.env.APP_USER || 'admin') : null) });
+});
+
 function requireAuth(req, res, next) {
   if (!process.env.APP_PASSWORD) { req.appRole = 'admin'; return next(); } // not configured → open (dev)
   if (req.path === '/api/health') return next();
-  const [scheme, encoded] = (req.headers.authorization || '').split(' ');
-  if (scheme === 'Basic' && encoded) {
-    const [u, ...rest] = Buffer.from(encoded, 'base64').toString().split(':');
-    const role = roleFor(u, rest.join(':')); // password may contain ':'
-    if (role) { req.appRole = role; return next(); }
-  }
-  res.set('WWW-Authenticate', 'Basic realm="Sanskar Palace Billing"');
-  return res.status(401).send('Authentication required');
+  const role = verifySession(readCookie(req, SESSION_COOKIE));
+  if (role) { req.appRole = role; return next(); }
+  return res.status(401).json({ error: 'Not logged in', code: 'unauthorized' });
 }
 app.use(requireAuth);
 
@@ -80,12 +142,6 @@ app.use((req, res, next) => {
     return res.status(403).json({ error: 'Admin only', code: 'forbidden' });
   }
   next();
-});
-
-// Who is logged in (so the UI can hide admin-only sections).
-app.get('/api/whoami', (req, res) => {
-  const role = req.appRole || 'admin';
-  res.json({ role, user: role === 'manager' ? 'manager' : (process.env.APP_USER || 'admin') });
 });
 
 // ---------------------------------------------------------------------------
