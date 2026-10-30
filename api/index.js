@@ -31,48 +31,56 @@ app.disable('x-powered-by');
 app.use(express.json({ limit: '25mb' }));
 
 // ---------------------------------------------------------------------------
-// Login gate + roles — cookie session. Two accounts:
-//   admin   / APP_PASSWORD        → full access  (user name from APP_USER)
-//   manager / MANAGER_PASSWORD    → front-desk only (restrictions below)
-// Login (password-only) sets a signed HttpOnly cookie; logout clears it. No
-// Basic Auth box, so "Log out" actually works — Basic Auth credentials can't be
-// cleared from JS in Chrome, which is why the old logout button did nothing.
-// Health check and the auth endpoints stay open for uptime monitors + login.
+// Login gate + roles — cookie session with DB-backed staff accounts.
+//   • Staff accounts live in the `users` collection: username + salted scrypt
+//     hash + role ('admin' | 'manager') + active flag. Managed in-app (admin).
+//   • Env break-glass: APP_PASSWORD (user APP_USER) always logs in as admin so
+//     you can never lock yourself out / bootstrap the first accounts. A shared
+//     MANAGER_PASSWORD still works too while it's set (remove it once every
+//     receptionist has their own account).
+// Login sets a signed HttpOnly cookie; logout clears it. No Basic Auth box, so
+// "Log out" actually works. Health + the auth endpoints stay open.
 // ---------------------------------------------------------------------------
 const safeEq = (a, b) => !!a && !!b && a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
-// The login form is password-only; the password alone determines the role.
-function roleForPassword(pass) {
-  if (process.env.APP_PASSWORD && safeEq(pass, process.env.APP_PASSWORD)) return 'admin';
-  if (process.env.MANAGER_PASSWORD && safeEq(pass, process.env.MANAGER_PASSWORD)) return 'manager';
-  return null;
+// --- Password hashing (scrypt; no external dependency) ---
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return { salt, hash };
 }
+function verifyPassword(password, salt, hash) {
+  if (!salt || !hash) return false;
+  const h = crypto.scryptSync(String(password), salt, 64).toString('hex');
+  return safeEq(h, hash);
+}
+// Never leak the hash/salt to the client.
+const sanitizeUser = (u) => u && ({ id: u.id, username: u.username, name: u.name || '', role: u.role === 'admin' ? 'admin' : 'manager', active: u.active !== false, createdAt: u.createdAt, updatedAt: u.updatedAt });
 
-// --- Signed session cookie (HMAC-SHA256 over "role.expiry") ---
+// --- Signed session cookie (HMAC-SHA256 over "role.uid.expiry") ---
 const SESSION_COOKIE = 'sp_session';
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // Secret: SESSION_SECRET if set, else derived from the passwords so it needs no
-// extra config (rotating a password invalidates existing sessions — fine).
+// extra config (rotating a password/secret invalidates existing sessions).
 function sessionSecret() {
   return process.env.SESSION_SECRET
     || `${process.env.APP_PASSWORD || ''}|${process.env.MANAGER_PASSWORD || ''}|sp-session-v1`;
 }
-function signSession(role) {
-  const payload = `${role}.${Date.now() + SESSION_TTL_MS}`;
+function signSession(role, uid) {
+  const payload = `${role}.${uid || ''}.${Date.now() + SESSION_TTL_MS}`;
   const sig = crypto.createHmac('sha256', sessionSecret()).update(payload).digest('base64url');
   return `${payload}.${sig}`;
 }
 function verifySession(token) {
   if (!token) return null;
   const parts = String(token).split('.');
-  if (parts.length !== 3) return null;
-  const [role, expStr, sig] = parts;
-  const expect = crypto.createHmac('sha256', sessionSecret()).update(`${role}.${expStr}`).digest('base64url');
+  if (parts.length !== 4) return null;
+  const [role, uid, expStr, sig] = parts;
+  const expect = crypto.createHmac('sha256', sessionSecret()).update(`${role}.${uid}.${expStr}`).digest('base64url');
   if (!safeEq(sig, expect)) return null;
   const exp = parseInt(expStr, 10);
   if (!isFinite(exp) || Date.now() > exp) return null;
   if (role !== 'admin' && role !== 'manager') return null;
-  return role;
+  return { role, uid };
 }
 function readCookie(req, name) {
   for (const part of String(req.headers.cookie || '').split(';')) {
@@ -88,8 +96,8 @@ function cookieAttrs(req, maxAgeSec) {
   a.push(`Max-Age=${maxAgeSec}`);
   return a;
 }
-function setSession(req, res, role) {
-  res.append('Set-Cookie', [`${SESSION_COOKIE}=${signSession(role)}`, ...cookieAttrs(req, Math.floor(SESSION_TTL_MS / 1000))].join('; '));
+function setSession(req, res, role, uid) {
+  res.append('Set-Cookie', [`${SESSION_COOKIE}=${signSession(role, uid)}`, ...cookieAttrs(req, Math.floor(SESSION_TTL_MS / 1000))].join('; '));
 }
 function clearSession(req, res) {
   res.append('Set-Cookie', [`${SESSION_COOKIE}=`, ...cookieAttrs(req, 0)].join('; '));
@@ -97,26 +105,57 @@ function clearSession(req, res) {
 
 // Public auth endpoints — registered BEFORE requireAuth so they're reachable
 // while logged out.
-app.post('/api/login', (req, res) => {
-  const role = roleForPassword((req.body && req.body.password) || '');
-  if (!role) return res.status(401).json({ error: 'Incorrect password', code: 'bad-credentials' });
-  setSession(req, res, role);
-  res.json({ role });
+app.post('/api/login', async (req, res) => {
+  try {
+    const username = String((req.body && req.body.username) || '').trim();
+    const password = String((req.body && req.body.password) || '');
+    if (!username || !password) return res.status(400).json({ error: 'Enter your username and password', code: 'bad-request' });
+    let role = null, uid = null;
+    // 1) DB staff account.
+    try {
+      const users = await readAll('users');
+      const u = users.find((x) => x && x.active !== false && String(x.username || '').toLowerCase() === username.toLowerCase());
+      if (u && verifyPassword(password, u.salt, u.hash)) { role = u.role === 'admin' ? 'admin' : 'manager'; uid = u.id; }
+    } catch { /* DB unreachable → fall through to env break-glass */ }
+    // 2) Env break-glass (admin always; shared manager only while set).
+    if (!role) {
+      const adminUser = (process.env.APP_USER || 'admin').toLowerCase();
+      if (process.env.APP_PASSWORD && username.toLowerCase() === adminUser && safeEq(password, process.env.APP_PASSWORD)) { role = 'admin'; uid = 'env-admin'; }
+      else if (process.env.MANAGER_PASSWORD && username.toLowerCase() === 'manager' && safeEq(password, process.env.MANAGER_PASSWORD)) { role = 'manager'; uid = 'env-manager'; }
+    }
+    if (!role) return res.status(401).json({ error: 'Incorrect username or password', code: 'bad-credentials' });
+    setSession(req, res, role, uid);
+    res.json({ role });
+  } catch (e) {
+    res.status(500).json({ error: 'Login failed', code: 'server-error' });
+  }
 });
 app.post('/api/logout', (req, res) => { clearSession(req, res); res.json({ ok: true }); });
-// whoami is public: reports the current role (or null) and whether login is
-// required at all, so the SPA can choose between the login screen and the app.
-app.get('/api/whoami', (req, res) => {
+// whoami is public: reports the current role (or null), whether login is
+// required, and the display name. It also re-checks that a staff account is
+// still active, so deactivating a user logs them out on their next page load.
+app.get('/api/whoami', async (req, res) => {
   const authRequired = !!process.env.APP_PASSWORD;
-  const role = authRequired ? verifySession(readCookie(req, SESSION_COOKIE)) : 'admin';
-  res.json({ role: role || null, authRequired, user: role === 'manager' ? 'manager' : (role ? (process.env.APP_USER || 'admin') : null) });
+  if (!authRequired) return res.json({ role: 'admin', authRequired: false, user: 'admin', name: 'Admin' });
+  const sess = verifySession(readCookie(req, SESSION_COOKIE));
+  if (!sess) return res.json({ role: null, authRequired: true, user: null, name: null });
+  let user = sess.role, name = null;
+  if (sess.uid && String(sess.uid).startsWith('usr_')) {
+    try {
+      const u = await readOne('users', sess.uid);
+      if (!u || u.active === false) return res.json({ role: null, authRequired: true, user: null, name: null });
+      user = u.username; name = u.name || u.username;
+    } catch { /* DB down — still honour the signed cookie */ }
+  } else if (sess.uid === 'env-admin') { user = process.env.APP_USER || 'admin'; name = 'Administrator'; }
+  else if (sess.uid === 'env-manager') { user = 'manager'; name = 'Manager'; }
+  res.json({ role: sess.role, authRequired: true, user, name });
 });
 
 function requireAuth(req, res, next) {
-  if (!process.env.APP_PASSWORD) { req.appRole = 'admin'; return next(); } // not configured → open (dev)
+  if (!process.env.APP_PASSWORD) { req.appRole = 'admin'; req.appUserId = 'dev'; return next(); } // not configured → open (dev)
   if (req.path === '/api/health') return next();
-  const role = verifySession(readCookie(req, SESSION_COOKIE));
-  if (role) { req.appRole = role; return next(); }
+  const sess = verifySession(readCookie(req, SESSION_COOKIE));
+  if (sess) { req.appRole = sess.role; req.appUserId = sess.uid; return next(); }
   return res.status(401).json({ error: 'Not logged in', code: 'unauthorized' });
 }
 app.use(requireAuth);
@@ -124,6 +163,7 @@ app.use(requireAuth);
 // Which endpoints the manager role may NOT use (admin-only). The UI hides these
 // sections too, but this is the real enforcement.
 function managerBlocked(method, p) {
+  if (/^\/api\/users(\/|$)/.test(p)) return true;                       // staff accounts (admin only, incl. reads)
   if (/^\/api\/expenses(\/|$)/.test(p)) return true;                    // Expenses hidden
   if (p === '/api/export') return true;                                // data backup/exfil
   if (method === 'DELETE' && /^\/api\/bills\//.test(p)) return true;    // deleting invoices
@@ -307,6 +347,71 @@ app.post('/api/bookings', h(async (req, res) => {
   res.json({ success: true, id: item.id });
 }));
 app.delete('/api/bookings/:id', h(async (req, res) => { await deleteOne('bookings', req.params.id); res.json({ success: true }); }));
+
+// ===========================================================================
+// STAFF ACCOUNTS (admin only — managerBlocked already 403s managers; the
+// handlers also assert the role defensively). Passwords are salted-scrypt
+// hashed and never returned. At least one active admin must always remain.
+// ===========================================================================
+const USERNAME_RE = /^[A-Za-z0-9._-]{2,40}$/;
+const requireAdmin = (req, res) => { if (req.appRole !== 'admin') { res.status(403).json({ error: 'Admin only', code: 'forbidden' }); return false; } return true; };
+const countActiveAdmins = (users, exceptId) => users.filter((u) => u && u.id !== exceptId && u.active !== false && u.role === 'admin').length;
+
+app.get('/api/users', h(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const users = await readAll('users');
+  res.json(users.map(sanitizeUser).sort((a, b) => String(a.username).localeCompare(String(b.username))));
+}));
+
+app.post('/api/users', h(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { username, name, role, password } = req.body || {};
+  const uname = String(username || '').trim();
+  if (!uname || !password) return res.status(400).json({ error: 'Username and password are required', code: 'bad-request' });
+  if (!USERNAME_RE.test(uname)) return res.status(400).json({ error: 'Username must be 2–40 characters: letters, numbers, dot, underscore or hyphen', code: 'bad-request' });
+  if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters', code: 'bad-request' });
+  const users = await readAll('users');
+  if (users.some((u) => String(u.username || '').toLowerCase() === uname.toLowerCase())) return res.status(409).json({ error: 'That username already exists', code: 'conflict' });
+  const { salt, hash } = hashPassword(password);
+  const now = new Date().toISOString();
+  const user = { id: 'usr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), username: uname, name: String(name || '').trim(), role: role === 'admin' ? 'admin' : 'manager', salt, hash, active: true, createdAt: now, updatedAt: now };
+  await writeOne('users', user.id, user);
+  res.json(sanitizeUser(user));
+}));
+
+app.put('/api/users/:id', h(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const user = await readOne('users', req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found', code: 'not-found' });
+  const { name, role, password, active } = req.body || {};
+  if (name !== undefined) user.name = String(name || '').trim();
+  if (role !== undefined) user.role = role === 'admin' ? 'admin' : 'manager';
+  if (active !== undefined) user.active = !!active;
+  if (password) {
+    if (String(password).length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters', code: 'bad-request' });
+    const h2 = hashPassword(password); user.salt = h2.salt; user.hash = h2.hash;
+  }
+  // Never leave zero active admins.
+  const users = await readAll('users');
+  const stillAdmin = user.active !== false && user.role === 'admin';
+  if (countActiveAdmins(users, user.id) + (stillAdmin ? 1 : 0) === 0) return res.status(400).json({ error: 'There must be at least one active admin', code: 'last-admin' });
+  user.updatedAt = new Date().toISOString();
+  await writeOne('users', user.id, user);
+  res.json(sanitizeUser(user));
+}));
+
+app.delete('/api/users/:id', h(async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const user = await readOne('users', req.params.id);
+  if (!user) return res.json({ success: true });
+  if (req.appUserId && req.appUserId === user.id) return res.status(400).json({ error: 'You can’t delete your own account while logged in', code: 'self-delete' });
+  if (user.role === 'admin') {
+    const users = await readAll('users');
+    if (countActiveAdmins(users, user.id) === 0) return res.status(400).json({ error: 'Can’t delete the last admin', code: 'last-admin' });
+  }
+  await deleteOne('users', req.params.id);
+  res.json({ success: true });
+}));
 
 // ===========================================================================
 // TERMS TEMPLATES (special: seeds a default when empty)

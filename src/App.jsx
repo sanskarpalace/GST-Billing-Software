@@ -4,7 +4,7 @@ import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProd
 
 // Sidebar sections the "manager" role does not see (admin keeps everything).
 // The API also enforces these — hiding is only the UI half.
-const MANAGER_HIDDEN_VIEWS = new Set(['expenses', 'reports', 'filing', 'incometax', 'settings']);
+const MANAGER_HIDDEN_VIEWS = new Set(['expenses', 'reports', 'filing', 'incometax', 'settings', 'staff']);
 import { isModuleEnabled, getUpcomingFilings, countsAsSales, localToday, toLocalIsoDate, DOCS_URL } from './utils';
 // v1.10.4 — Route-level lazy loading. Prior App.jsx synchronously
 // imported all 12 views (~15k LOC combined), so a first-paint on
@@ -37,6 +37,7 @@ const GSTReturns = lazy(() => import('./components/GSTReturns'));
 const IncomeTax = lazy(() => import('./components/IncomeTax'));
 const PurchaseBills = lazy(() => import('./components/PurchaseBills'));
 const FrontDesk = lazy(() => import('./components/FrontDesk'));
+const UsersManager = lazy(() => import('./components/UsersManager'));
 const ControlPanel = lazy(() => import('./components/ControlPanel'));
 const SupportView = lazy(() => import('./components/SupportView'));
 import StarBanner from './components/StarBanner';
@@ -78,7 +79,7 @@ function App() {
       const params = new URLSearchParams(window.location.search);
       const v = params.get('view');
       // v1.10.74 - 'controlpanel' added so ?view=controlpanel deep links work too.
-      const valid = ['dashboard', 'new', 'frontdesk', 'clients', 'inventory', 'expenses', 'purchases', 'recurring', 'receipts', 'reports', 'filing', 'incometax', 'settings', 'controlpanel', 'support'];
+      const valid = ['dashboard', 'new', 'frontdesk', 'clients', 'inventory', 'expenses', 'purchases', 'recurring', 'receipts', 'reports', 'filing', 'incometax', 'settings', 'staff', 'controlpanel', 'support'];
       if (v && valid.includes(v)) {
         // Strip the query string so a refresh doesn't keep snapping back to
         // the shortcut target — only the *first* navigation honours it.
@@ -105,6 +106,7 @@ function App() {
   const [canInstall, setCanInstall] = useState(false);
   const [role, setRole] = useState('admin'); // 'admin' | 'manager' — from /api/whoami
   const [auth, setAuth] = useState('checking'); // 'checking' | 'in' | 'out' — session gate
+  const [userInfo, setUserInfo] = useState(null); // { user, name } of the logged-in account
   const [serverDown, setServerDown] = useState(false);
   const deferredPrompt = useRef(null);
   const retryTimer = useRef(null);
@@ -385,6 +387,7 @@ function App() {
     getWhoami().then((w) => {
       if (w?.authRequired && !w?.role) { setAuth('out'); return; }
       setRole(w?.role || 'admin');
+      setUserInfo({ user: w?.user || null, name: w?.name || null });
       setAuth('in');
     }).catch(() => { setAuth('in'); });
   }, []);
@@ -1027,6 +1030,15 @@ function App() {
               )}
             </button>
             )}
+            {role !== 'manager' && (
+              <button
+                className={`nav-btn ${currentView === 'staff' ? 'nav-btn-active' : ''}`}
+                onClick={() => setCurrentView('staff')}
+                title="Manage staff logins (admin only)"
+              >
+                <Users size={18} /> Staff
+              </button>
+            )}
             <button className="nav-btn" onClick={handleLogout} title="Log out and switch user">
               <LogOut size={18} /> Log out
             </button>
@@ -1100,6 +1112,9 @@ function App() {
         )}
         {currentView === 'settings' && (
           <SettingsView onSaved={(p) => setProfile(p)} />
+        )}
+        {currentView === 'staff' && role !== 'manager' && (
+          <UsersManager currentUser={userInfo?.user} />
         )}
         {currentView === 'controlpanel' && (
           <ControlPanel />

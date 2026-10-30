@@ -276,11 +276,17 @@ export const deleteBooking = async (id) => apiFetch(`${API}/bookings/${encodeURI
 export const getWhoami = async () => {
   try { return await apiFetch(`${API}/whoami`); } catch { return { role: 'admin', authRequired: false }; }
 };
-// Log in with a password; the server sets an HttpOnly session cookie and
-// returns the resolved role. Throws (err.status 401) on a wrong password.
-export const login = (password) => apiFetch(`${API}/login`, { method: 'POST', body: JSON.stringify({ password }) });
+// Log in with a username + password; the server sets an HttpOnly session cookie
+// and returns the resolved role. Throws (err.status 401) on bad credentials.
+export const login = (username, password) => apiFetch(`${API}/login`, { method: 'POST', body: JSON.stringify({ username, password }) });
 // Clear the session cookie. Best-effort — never blocks the UI from logging out.
 export const logout = async () => { try { await apiFetch(`${API}/logout`, { method: 'POST' }); } catch { /* ignore */ } };
+
+// ---- Staff accounts (admin only; server enforces) ----
+export const getUsers = () => apiFetch(`${API}/users`);
+export const createUser = (user) => apiFetch(`${API}/users`, { method: 'POST', body: JSON.stringify(user) });
+export const updateUser = (id, patch) => apiFetch(`${API}/users/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
+export const deleteUser = (id) => apiFetch(`${API}/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 // ---- GSTIN → registered name lookup ----
 // Best-effort. Resolves to { ok, legalName, tradeName, address } when the

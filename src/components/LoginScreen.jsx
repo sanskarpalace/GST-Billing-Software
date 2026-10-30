@@ -6,20 +6,21 @@ import { login } from '../store';
 // vs manager). On success the server has set the session cookie; the parent
 // reloads so every data effect re-runs authenticated.
 export default function LoginScreen({ onLoggedIn }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
-    if (!password || busy) return;
+    if (!username || !password || busy) return;
     setBusy(true); setError('');
     try {
-      const { role } = await login(password);
+      const { role } = await login(username.trim(), password);
       onLoggedIn(role);
     } catch (err) {
-      setError(err && err.status === 401
-        ? 'Incorrect password. Please try again.'
+      setError(err && (err.status === 401 || err.status === 400)
+        ? 'Incorrect username or password. Please try again.'
         : 'Could not reach the server. Check your connection and retry.');
       setBusy(false);
     }
@@ -30,16 +31,21 @@ export default function LoginScreen({ onLoggedIn }) {
       <form style={S.card} onSubmit={submit}>
         <img src="/icons/icon-512.png" alt="Sanskar Palace Hotel & Resort" style={S.logo} />
         <div style={S.sub}>Billing &amp; Front Desk</div>
+        <label style={S.label} htmlFor="sp-user">Username</label>
+        <input id="sp-user" type="text" autoFocus value={username} autoComplete="username"
+          autoCapitalize="none" autoCorrect="off" spellCheck={false}
+          onChange={(e) => { setUsername(e.target.value); setError(''); }}
+          placeholder="Your username" style={{ ...S.input, marginBottom: 14 }} />
         <label style={S.label} htmlFor="sp-pass">Password</label>
-        <input id="sp-pass" type="password" autoFocus value={password} autoComplete="current-password"
+        <input id="sp-pass" type="password" value={password} autoComplete="current-password"
           onChange={(e) => { setPassword(e.target.value); setError(''); }}
-          placeholder="Enter your password" style={S.input} />
+          placeholder="Your password" style={S.input} />
         {error && <div style={S.error}>{error}</div>}
-        <button type="submit" disabled={busy || !password}
-          style={{ ...S.btn, opacity: (busy || !password) ? 0.6 : 1, cursor: (busy || !password) ? 'not-allowed' : 'pointer' }}>
+        <button type="submit" disabled={busy || !username || !password}
+          style={{ ...S.btn, opacity: (busy || !username || !password) ? 0.6 : 1, cursor: (busy || !username || !password) ? 'not-allowed' : 'pointer' }}>
           {busy ? 'Signing in…' : 'Log in'}
         </button>
-        <div style={S.hint}>Reception uses the manager password; the owner uses the admin password.</div>
+        <div style={S.hint}>Use the username and password your administrator gave you.</div>
       </form>
     </div>
   );
