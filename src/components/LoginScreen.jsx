@@ -71,69 +71,72 @@ export default function LoginScreen({ onLoggedIn }) {
   );
 }
 
+// Minimal, modern, theme-aware. Colors come from the app's own CSS tokens
+// (--bg, --bg-secondary, --text, --border-color…) so the screen follows the
+// user's light/dark choice automatically; gold (#c9a227) is the only accent.
+const GOLD = '#c9a227';
 const CSS = `
 .sl-wrap {
   position: fixed; inset: 0; z-index: 10000;
   display: flex; align-items: center; justify-content: center;
   padding: 1.5rem; overflow: auto;
   background:
-    radial-gradient(900px 520px at 50% -10%, rgba(212,175,55,0.12), transparent 60%),
-    radial-gradient(760px 520px at 50% 115%, rgba(212,175,55,0.07), transparent 60%),
-    #080808;
+    radial-gradient(1100px 520px at 50% -5%, rgba(201,162,39,0.06), transparent 62%),
+    var(--bg, #0b0b0b);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
 }
 .sl-card {
-  width: 100%; max-width: 400px; text-align: center;
-  background: linear-gradient(180deg, #171717 0%, #0f0f0f 100%);
-  border: 1px solid rgba(212,175,55,0.22);
-  border-radius: 20px;
-  padding: 2.4rem 2rem 1.9rem;
-  box-shadow: 0 30px 80px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.04);
-  animation: sl-in 0.5s cubic-bezier(.2,.7,.2,1) both;
+  width: 100%; max-width: 384px; text-align: center;
+  background: var(--bg-secondary, #141414);
+  border: 1px solid var(--border-color, #262626);
+  border-radius: 16px;
+  padding: 2.4rem 2rem 1.8rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 14px 40px rgba(0,0,0,0.08);
+  animation: sl-in 0.45s cubic-bezier(.2,.7,.2,1) both;
 }
-@keyframes sl-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+[data-theme="dark"] .sl-card { box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+@keyframes sl-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 .sl-logo-wrap { display: flex; justify-content: center; }
-.sl-logo { width: 100%; max-width: 282px; height: auto; display: block;
-  filter: drop-shadow(0 6px 20px rgba(212,175,55,0.16)); }
-.sl-sub { color: #c9a94a; font-size: 0.72rem; font-weight: 600;
-  letter-spacing: 0.28em; text-transform: uppercase; margin: 0.2rem 0 1.1rem; }
-.sl-rule { height: 1px; width: 72px; margin: 0 auto 1.5rem;
-  background: linear-gradient(90deg, transparent, rgba(212,175,55,0.55), transparent); }
-.sl-field { text-align: left; margin-bottom: 1rem; }
-.sl-label { display: block; color: #d0d0d0; font-size: 0.72rem; font-weight: 600;
-  letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 7px; }
+.sl-logo { width: 100%; max-width: 244px; height: auto; display: block; }
+.sl-sub { color: ${GOLD}; font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.26em; text-transform: uppercase; margin: 0.35rem 0 1rem; }
+.sl-rule { height: 1px; width: 56px; margin: 0 auto 1.6rem;
+  background: linear-gradient(90deg, transparent, rgba(201,162,39,0.45), transparent); }
+.sl-field { text-align: left; margin-bottom: 0.95rem; }
+.sl-label { display: block; color: var(--text-secondary, #9aa0a6); font-size: 0.7rem; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
 .sl-input {
-  width: 100%; box-sizing: border-box; padding: 0.85rem 1rem;
-  border-radius: 11px; background: #0c0c0c; border: 1px solid #2b2b2b;
-  color: #f3f3f3; font-size: 0.95rem; outline: none;
-  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  width: 100%; box-sizing: border-box; padding: 0.8rem 0.95rem;
+  border-radius: 10px; background: var(--bg, #0c0c0c); border: 1px solid var(--border-color, #2b2b2b);
+  color: var(--text, #f3f3f3); font-size: 0.95rem; outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
-.sl-input::placeholder { color: #666; }
-.sl-input:hover { border-color: #3a3a3a; }
-/* Gold focus ring. The outline override (with !important) beats the app's
-   global emerald input:focus-visible rule; offset 2px gives a clean halo. */
+.sl-input::placeholder { color: var(--text-muted, #6b7280); }
+.sl-input:hover { border-color: rgba(201,162,39,0.4); }
+/* Gold focus ring — the !important outline beats the app's global emerald
+   input:focus-visible rule. */
 .sl-input:focus, .sl-input:focus-visible {
-  border-color: #d4af37; background: #0f0d07;
-  outline: 2px solid rgba(212,175,55,0.85) !important;
-  outline-offset: 2px !important; box-shadow: none;
+  border-color: ${GOLD};
+  outline: 2px solid rgba(201,162,39,0.45) !important; outline-offset: 2px !important;
+  box-shadow: none;
 }
 .sl-input:-webkit-autofill, .sl-input:-webkit-autofill:hover, .sl-input:-webkit-autofill:focus {
-  -webkit-text-fill-color: #f3f3f3; caret-color: #f3f3f3;
-  -webkit-box-shadow: 0 0 0 1000px #0c0c0c inset; transition: background-color 9999s ease-in-out 0s;
+  -webkit-text-fill-color: var(--text, #f3f3f3); caret-color: var(--text, #f3f3f3);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg, #0c0c0c) inset; transition: background-color 9999s ease-in-out 0s;
 }
-.sl-err { color: #f87171; font-size: 0.82rem; text-align: left; margin: 2px 0 0; }
+.sl-err { color: #ef4444; font-size: 0.82rem; text-align: left; margin: 2px 0 0; }
 .sl-btn {
-  width: 100%; margin-top: 1.15rem; padding: 0.9rem; cursor: pointer;
-  border: none; border-radius: 11px; font-size: 0.96rem; font-weight: 700; letter-spacing: 0.02em;
-  color: #241a00; background: linear-gradient(180deg, #e8c85e 0%, #c9a12f 100%);
-  box-shadow: 0 10px 26px rgba(201,161,47,0.26);
-  transition: filter .15s ease, box-shadow .15s ease, transform .05s ease, opacity .15s ease;
+  width: 100%; margin-top: 1.1rem; padding: 0.85rem; cursor: pointer;
+  border: none; border-radius: 10px; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.01em;
+  color: #231a00; background: linear-gradient(180deg, #e3c14f 0%, #c49a2a 100%);
+  transition: filter .15s ease, transform .05s ease, opacity .15s ease;
 }
-.sl-btn:hover:not(:disabled) { filter: brightness(1.07); box-shadow: 0 12px 30px rgba(201,161,47,0.34); }
+.sl-btn:hover:not(:disabled) { filter: brightness(1.05); }
 .sl-btn:active:not(:disabled) { transform: translateY(1px); }
-.sl-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
-.sl-btn:focus-visible { outline: 2px solid rgba(212,175,55,0.85) !important; outline-offset: 2px !important; }
-.sl-hint { color: #7c7c7c; font-size: 0.74rem; line-height: 1.5; margin-top: 1.3rem; }
-.sl-foot { color: #585858; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 0.85rem; }
-@media (max-width: 420px) { .sl-card { padding: 2rem 1.4rem 1.6rem; } }
+.sl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.sl-btn:focus-visible { outline: 2px solid rgba(201,162,39,0.6) !important; outline-offset: 2px !important; }
+.sl-hint { color: var(--text-muted, #7c7c7c); font-size: 0.74rem; line-height: 1.5; margin-top: 1.2rem; }
+.sl-foot { color: var(--text-muted, #585858); font-size: 0.64rem; letter-spacing: 0.12em;
+  text-transform: uppercase; margin-top: 0.7rem; opacity: 0.8; }
+@media (max-width: 420px) { .sl-card { padding: 2rem 1.4rem 1.5rem; } }
 `;
