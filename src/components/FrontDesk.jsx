@@ -275,7 +275,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
       {/* Tabs */}
       <div className="flex gap-2" style={{ marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {[['board', 'Board'], ['reservations', `Reservations${reservations.length ? ` (${reservations.length})` : ''}`], ['blocks', `Event blocks${blocks.length ? ` (${blocks.length})` : ''}`], ['history', `History${history.length ? ` (${history.length})` : ''}`], ['rooms', 'Rooms']].map(([k, label]) => (
+        {[['board', 'Board'], ['reservations', `Reservations${reservations.length ? ` (${reservations.length})` : ''}`], ['blocks', `Events${eventGroups.length ? ` (${eventGroups.length})` : ''}`], ['history', `History${history.length ? ` (${history.length})` : ''}`], ['rooms', 'Rooms']].map(([k, label]) => (
           <button key={k} className={`btn ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
