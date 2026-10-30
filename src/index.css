@@ -92,6 +92,12 @@
 [data-theme="dark"] .form-input { background-color: #161616; border-color: #2a2a2a; color: #f1f5f9; }
 [data-theme="dark"] .form-input::placeholder { color: #6f6f6f; }
 [data-theme="dark"] .form-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(212, 175, 55,0.2); }
+/* Native date/time picker icons default to near-black — invert them in dark
+   mode so they're visible on the near-black inputs (date filters, pickers). */
+[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator,
+[data-theme="dark"] input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+[data-theme="dark"] input[type="time"]::-webkit-calendar-picker-indicator,
+[data-theme="dark"] input[type="month"]::-webkit-calendar-picker-indicator { filter: invert(1) brightness(0.85); cursor: pointer; }
 [data-theme="dark"] select.form-input { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E"); }
 [data-theme="dark"] .btn-secondary { background: #161616; color: #f1f5f9; border-color: #2a2a2a; }
 [data-theme="dark"] .btn-secondary:hover:not(:disabled) { background: #2a2a2a; border-color: #3a3a3a; }
