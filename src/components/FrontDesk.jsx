@@ -67,6 +67,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const [roomModal, setRoomModal] = useState(null);     // room object (new = {})
   const [bookingModal, setBookingModal] = useState(null); // { mode, roomId?, booking? }
   const [blockModal, setBlockModal] = useState(false);
+  const [blockSearch, setBlockSearch] = useState('');
+  const [blockFilter, setBlockFilter] = useState('all'); // all | upcoming | past
+  const [eventDetail, setEventDetail] = useState(null);   // selected event name
 
   const currency = profile?.currency || 'INR';
   const today = localToday();
@@ -159,6 +162,18 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
   const departures = bookings.filter((b) => b.kind !== 'block' && b.status === 'checked-in' && b.checkOut === today);
   const reservations = bookings.filter((b) => isActive(b) && b.kind !== 'block' && b.status !== 'checked-in').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
   const blocks = bookings.filter((b) => isActive(b) && b.kind === 'block').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+  // Group blocks into events (same name), with span + distinct room count.
+  const eventGroups = Object.values(blocks.reduce((acc, b) => {
+    const key = (b.eventName || 'Event').trim();
+    (acc[key] = acc[key] || { name: key, items: [] }).items.push(b);
+    return acc;
+  }, {})).map((g) => {
+    const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+    return { name: g.name, items, from: items[0].checkIn, to: items[items.length - 1].checkOut, totalRooms: new Set(items.flatMap((b) => b.roomIds || [])).size, notes: items[0].notes };
+  }).sort((a, c) => (a.from || '').localeCompare(c.from || ''));
+  const filteredEvents = eventGroups
+    .filter((g) => !blockSearch.trim() || g.name.toLowerCase().includes(blockSearch.trim().toLowerCase()))
+    .filter((g) => blockFilter === 'all' || (blockFilter === 'upcoming' ? g.to >= today : g.to < today));
   const history = bookings.filter((b) => b.kind !== 'block' && (b.status === 'checked-out' || b.status === 'cancelled'))
     .sort((a, b) => (b.checkedOutAt || b.checkOut || '').localeCompare(a.checkedOutAt || a.checkOut || ''));
 
@@ -303,37 +318,31 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
         <div>
           {blocks.length === 0 ? (
             <div className="glass-panel empty-state"><CalendarDays size={48} /><p>No event blocks. Hold rooms for a wedding, conference, etc.</p><button className="btn btn-primary" onClick={() => setBlockModal(true)}><Plus size={18} /> Block for event</button></div>
-          ) : (
-            Object.values(blocks.reduce((acc, b) => {
-              const key = (b.eventName || 'Event').trim();
-              (acc[key] = acc[key] || { name: key, items: [] }).items.push(b);
-              return acc;
-            }, {}))
-              .sort((a, c) => (a.items[0].checkIn || '').localeCompare(c.items[0].checkIn || ''))
-              .map((g) => {
-                const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
-                const from = items[0].checkIn, to = items[items.length - 1].checkOut;
-                return (
-                  <div key={g.name} className="glass-panel" style={{ padding: '0.85rem 1rem', marginBottom: '0.75rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                      <strong style={{ fontSize: '1rem' }}>🎉 {g.name}</strong>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{fmtDate(from)}{to !== from ? ` – ${fmtDate(to)}` : ''} · {items.length} day{items.length > 1 ? 's' : ''}</span>
-                    </div>
-                    {items[0].notes && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>{items[0].notes}</div>}
-                    {items.map((b) => (
-                      <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '0.4rem 0', borderTop: '1px solid var(--border)', fontSize: '0.82rem', marginTop: 6 }}>
-                        <div style={{ minWidth: 0 }}>
-                          <strong style={{ color: 'var(--text-muted)', marginRight: 6 }}>{fmtDate(b.checkIn)}{b.checkOut !== b.checkIn ? `–${fmtDate(b.checkOut)}` : ''}</strong>
-                          <span>{(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</span>
-                          <span style={{ color: 'var(--text-muted)' }}> · {(b.roomIds || []).length} rooms</span>
-                        </div>
-                        <button className="icon-btn icon-btn-red" title="Remove this day" onClick={() => removeBooking(b, 'Event block')}><Trash2 size={14} /></button>
-                      </div>
-                    ))}
+          ) : (<>
+            <div className="glass-panel" style={{ padding: '0.6rem 0.85rem', marginBottom: '0.75rem', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input type="text" className="form-input" style={{ flex: 1, minWidth: 180 }} placeholder="Search events by name…" value={blockSearch} onChange={(e) => setBlockSearch(e.target.value)} />
+              <select className="form-input" style={{ width: 'auto' }} value={blockFilter} onChange={(e) => setBlockFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="past">Past</option>
+              </select>
+            </div>
+            {filteredEvents.length === 0 ? (
+              <div className="glass-panel empty-state"><CalendarDays size={40} /><p>No events match.</p></div>
+            ) : filteredEvents.map((g) => (
+              <button key={g.name} type="button" className="glass-panel" onClick={() => setEventDetail(g.name)}
+                style={{ width: '100%', textAlign: 'left', cursor: 'pointer', padding: '0.85rem 1rem', marginBottom: '0.6rem', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <strong style={{ fontSize: '0.95rem' }}>🎉 {g.name}</strong>
+                  {g.to < today && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>(past)</span>}
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.totalRooms} rooms
                   </div>
-                );
-              })
-          )}
+                </div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>View ›</span>
+              </button>
+            ))}
+          </>)}
         </div>
       ) : tab === 'history' ? (
         <div className="glass-panel" style={{ padding: 0 }}>
@@ -383,6 +392,39 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
       {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
+      {eventDetail && (() => {
+        const days = blocks.filter((b) => (b.eventName || 'Event').trim() === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+        return (
+          <div className="modal-overlay" onClick={() => setEventDetail(null)}>
+            <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="section-title" style={{ margin: 0 }}>🎉 {eventDetail}</h3>
+                <button className="icon-btn" onClick={() => setEventDetail(null)}><X size={18} /></button>
+              </div>
+              {days.length === 0 ? (
+                <p style={{ color: 'var(--text-muted)' }}>No days left for this event.</p>
+              ) : (<>
+                {days[0].notes && <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>{days[0].notes}</p>}
+                {days.map((b) => (
+                  <div key={b.id} style={{ padding: '0.6rem 0', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <strong style={{ fontSize: '0.88rem' }}>{fmtDate(b.checkIn)}{b.checkOut !== b.checkIn ? ` – ${fmtDate(b.checkOut)}` : ''}</strong>
+                      <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => removeBooking(b, 'Event block')}><Trash2 size={13} /> Remove day</button>
+                    </div>
+                    <div style={{ fontSize: '0.82rem', marginTop: 4 }}>
+                      {(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}
+                      <span style={{ color: 'var(--text-muted)' }}> · {(b.roomIds || []).length} rooms</span>
+                    </div>
+                  </div>
+                ))}
+              </>)}
+              <div className="flex gap-2 justify-end mt-4">
+                <button className="btn btn-primary" onClick={() => setEventDetail(null)}>Done</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
