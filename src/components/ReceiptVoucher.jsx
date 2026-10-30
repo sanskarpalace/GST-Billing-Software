@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Receipt, Plus, Trash2, Search, Printer, Pencil } from 'lucide-react';
-import { getAllReceipts, saveReceipt, deleteReceipt, getAllBills, getProfile, getNextInvoiceNumber, saveBill } from '../store';
+import { getAllReceipts, saveReceipt, deleteReceipt, getAllBills, getProfile, getNextInvoiceNumber, saveBill, getAllClients, saveClient } from '../store';
 import { formatCurrency, numberToWords, belongsToProfile, isUnassignedToBusiness, countsAsSales, businessKeyOf, localToday, amountDue, paymentStatusFor, isCancelledBill } from '../utils';
 import UnassignedBanner from './UnassignedBanner';
 import { toast } from './Toast';
@@ -32,6 +32,8 @@ export default function ReceiptVoucher() {
   const [form, setForm] = useState({ ...emptyForm });
   const [previewReceipt, setPreviewReceipt] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [showGuestSuggest, setShowGuestSuggest] = useState(false);
   const receiptRef = useRef(null);
   // v1.10.74 - the number previewed when the form opened, so save can tell
   // whether the user typed their own.
@@ -39,7 +41,8 @@ export default function ReceiptVoucher() {
 
   const loadData = async () => {
     try {
-      const [recs, bls, prof] = await Promise.all([getAllReceipts(), getAllBills(), getProfile()]);
+      const [recs, bls, prof, cls] = await Promise.all([getAllReceipts(), getAllBills(), getProfile(), getAllClients()]);
+      setClients(cls || []);
       // v1.10.66 (#64 item 2) — receipts belong to one business, like its
       // invoices. Both lists are narrowed: the receipts shown, and the
       // invoices offered in Quick Select and matched by "Against Invoice".
@@ -223,6 +226,13 @@ export default function ReceiptVoucher() {
         } catch { /* non-fatal: receipt is saved; user can manually update the bill */ }
       }
 
+      // Save the guest to the directory so it autocompletes on the later
+      // invoice (and shows under Guests) — the whole point of an advance receipt.
+      const gname = form.clientName.trim();
+      if (gname && !clients.some(c => (c.name || '').trim().toLowerCase() === gname.toLowerCase())) {
+        try { await saveClient({ name: gname, country: 'India' }); } catch { /* non-blocking */ }
+      }
+
       toast('Receipt saved', 'success');
       if (unmatchedRef) toast(`No invoice numbered ${unmatchedRef} was found, so this receipt is saved on its own.`, 'info');
       closeForm();
@@ -375,9 +385,31 @@ export default function ReceiptVoucher() {
                 <label className="form-label">Date</label>
                 <input type="date" className="form-input" value={form.date} onChange={e => updateField('date', e.target.value)} />
               </div>
-              <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                <label className="form-label">Received From (Client Name) *</label>
-                <input type="text" className="form-input" value={form.clientName} onChange={e => updateField('clientName', e.target.value)} />
+              <div className="form-group" style={{ gridColumn: 'span 2', position: 'relative' }}>
+                <label className="form-label">Received From (Guest) *</label>
+                <input type="text" className="form-input" value={form.clientName} autoComplete="off"
+                  onChange={e => { updateField('clientName', e.target.value); setShowGuestSuggest(true); }}
+                  onFocus={() => setShowGuestSuggest(true)}
+                  onBlur={() => setTimeout(() => setShowGuestSuggest(false), 150)}
+                  placeholder="Type to search saved guests or add new" />
+                {showGuestSuggest && (() => {
+                  const q = form.clientName.trim().toLowerCase();
+                  const matches = q ? clients.filter(c => (c.name || '').toLowerCase().includes(q)).slice(0, 6) : [];
+                  return matches.length > 0 ? (
+                    <div className="client-suggestions">
+                      {matches.map(c => (
+                        <button type="button" key={c.id} className="client-suggestion-item"
+                          onMouseDown={() => { updateField('clientName', c.name || ''); setShowGuestSuggest(false); }}>
+                          <div className="client-suggestion-main">
+                            <strong>{c.name}</strong>
+                            {(c.companyName || c.phone) && <small className="client-suggestion-addr">{c.companyName || c.phone}</small>}
+                          </div>
+                          <span>{c.phone || ''}{c.gstin ? ` · ${c.gstin}` : ''}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null;
+                })()}
               </div>
               <div className="form-group">
                 <label className="form-label">Amount *</label>
