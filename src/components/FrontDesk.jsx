@@ -238,7 +238,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     const s = STATUS[key];
     const hall = !!room.isHall;
     return (
-      <div key={room.id} className="glass-panel" style={{ padding: '0.85rem', borderLeft: `4px solid ${s.color}`, background: s.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div key={room.id} className="glass-panel" style={{ padding: '0.85rem', borderLeft: `4px solid ${s.color}`, background: key === 'vacant' ? undefined : s.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
           <strong style={{ fontSize: hall ? '0.9rem' : '1.05rem' }}>{room.number}</strong>
           <span style={{ fontSize: '0.7rem', fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</span>
