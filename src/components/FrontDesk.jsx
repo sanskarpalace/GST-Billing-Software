@@ -391,7 +391,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
 
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
-      {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
+      {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} editBlock={(blockModal && blockModal.editBlock) || null} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
       {eventDetail && (() => {
         const days = blocks.filter((b) => (b.eventName || 'Event').trim() === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
         return (
@@ -409,7 +409,10 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay }) {
                   <div key={b.id} style={{ padding: '0.6rem 0', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <strong style={{ fontSize: '0.88rem' }}>{fmtDate(b.checkIn)}{b.checkOut !== b.checkIn ? ` – ${fmtDate(b.checkOut)}` : ''}</strong>
-                      <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => removeBooking(b, 'Event block')}><Trash2 size={13} /> Remove day</button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => { setBlockModal({ editBlock: b }); setEventDetail(null); }}><Pencil size={13} /> Edit</button>
+                        <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => removeBooking(b, 'Event block')}><Trash2 size={13} /> Remove day</button>
+                      </div>
                     </div>
                     <div style={{ fontSize: '0.82rem', marginTop: 4 }}>
                       {(b.roomIds || []).length === rooms.length ? 'All rooms' : (b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}
@@ -573,10 +576,15 @@ function BookingModal({ rooms, bookings, ctx, onClose, onSaved }) {
 }
 
 // ---------------- Event-block modal (bulk) ----------------
-function BlockModal({ rooms, bookings = [], initialSelected = [], onClose, onSaved }) {
+function BlockModal({ rooms, bookings = [], initialSelected = [], editBlock = null, onClose, onSaved }) {
   const today = localToday();
-  const [form, setForm] = useState({ eventName: '', checkIn: today, checkOut: isoAddDays(today, 1), notes: '' });
-  const [selected, setSelected] = useState(() => new Set(initialSelected));
+  const [form, setForm] = useState({
+    eventName: editBlock?.eventName || '',
+    checkIn: editBlock?.checkIn || today,
+    checkOut: editBlock?.checkOut || isoAddDays(today, 1),
+    notes: editBlock?.notes || '',
+  });
+  const [selected, setSelected] = useState(() => new Set(editBlock?.roomIds || initialSelected));
   const [saving, setSaving] = useState(false);
   const allSelected = selected.size === rooms.length && rooms.length > 0;
   const toggle = (id) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -589,15 +597,15 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], onClose, onSav
     if (!form.checkIn || !form.checkOut || form.checkOut < form.checkIn) { toast('Pick a valid date range', 'warning'); return; }
     setSaving(true);
     try {
-      const ok = await saveWithOverride({ kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
+      const ok = await saveWithOverride({ ...(editBlock || {}), kind: 'block', status: 'reserved', eventName: form.eventName.trim(), roomIds: [...selected], checkIn: form.checkIn, checkOut: form.checkOut, notes: form.notes.trim() });
       if (!ok) { setSaving(false); return; }
-      toast(`Blocked ${selected.size} room${selected.size > 1 ? 's' : ''} for ${form.eventName.trim()}`, 'success'); onSaved();
+      toast(editBlock ? `Updated "${form.eventName.trim()}"` : `Blocked ${selected.size} room${selected.size > 1 ? 's' : ''} for ${form.eventName.trim()}`, 'success'); onSaved();
     } catch { toast('Save failed', 'error'); setSaving(false); }
   };
 
   return (
     <div className="modal-overlay"><div className="modal-content" style={{ maxWidth: 560 }}>
-      <div className="flex justify-between items-center mb-4"><h3 className="section-title" style={{ margin: 0 }}>Block rooms for an event</h3><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
+      <div className="flex justify-between items-center mb-4"><h3 className="section-title" style={{ margin: 0 }}>{editBlock ? 'Edit event block' : 'Block rooms for an event'}</h3><button className="icon-btn" onClick={onClose}><X size={18} /></button></div>
       <div className="grid grid-cols-2 gap-4">
         <div className="form-group full-width"><label className="form-label">Event name *</label><input className="form-input" value={form.eventName} onChange={(e) => setForm({ ...form, eventName: e.target.value })} placeholder="e.g. Sharma Wedding, Corporate Conference" /></div>
         <div className="form-group"><label className="form-label">From *</label><input type="date" className="form-input" value={form.checkIn} onChange={(e) => setForm({ ...form, checkIn: e.target.value })} /></div>
@@ -621,7 +629,7 @@ function BlockModal({ rooms, bookings = [], initialSelected = [], onClose, onSav
         )}
       </div>
       <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{(form.checkIn && form.checkOut && form.checkOut >= form.checkIn) ? `${nights + 1} day${nights + 1 > 1 ? 's' : ''} blocked` : 'Pick a valid date range'}</div>
-      <div className="flex gap-2 justify-end mt-4"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>Block rooms</button></div>
+      <div className="flex gap-2 justify-end mt-4"><button className="btn btn-secondary" onClick={onClose}>Cancel</button><button className="btn btn-primary" onClick={save} disabled={saving}>{editBlock ? 'Save changes' : 'Block rooms'}</button></div>
     </div></div>
   );
 }
