@@ -37,7 +37,7 @@ export default function LoginScreen({ onLoggedIn }) {
       <style>{CSS}</style>
       <form className="sl-card" onSubmit={submit} noValidate>
         <div className="sl-logo-wrap">
-          <img className="sl-logo" src="/icons/icon-512.png" alt="Sanskar Palace Hotel & Resort" />
+          <img className="sl-logo" src="/login-logo.png" alt="Sanskar Palace Hotel & Resort" />
         </div>
         <div className="sl-sub">Billing &amp; Front Desk</div>
         <div className="sl-rule" />
@@ -93,7 +93,7 @@ const CSS = `
 }
 @keyframes sl-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .sl-logo-wrap { display: flex; justify-content: center; }
-.sl-logo { width: 196px; max-width: 74%; height: auto; display: block;
+.sl-logo { width: 100%; max-width: 282px; height: auto; display: block;
   filter: drop-shadow(0 6px 20px rgba(212,175,55,0.16)); }
 .sl-sub { color: #c9a94a; font-size: 0.72rem; font-weight: 600;
   letter-spacing: 0.28em; text-transform: uppercase; margin: 0.2rem 0 1.1rem; }
@@ -110,8 +110,13 @@ const CSS = `
 }
 .sl-input::placeholder { color: #666; }
 .sl-input:hover { border-color: #3a3a3a; }
-.sl-input:focus { border-color: #d4af37; background: #0f0d07;
-  box-shadow: 0 0 0 3px rgba(212,175,55,0.16); }
+/* Gold focus ring. The outline override (with !important) beats the app's
+   global emerald input:focus-visible rule; offset 2px gives a clean halo. */
+.sl-input:focus, .sl-input:focus-visible {
+  border-color: #d4af37; background: #0f0d07;
+  outline: 2px solid rgba(212,175,55,0.85) !important;
+  outline-offset: 2px !important; box-shadow: none;
+}
 .sl-input:-webkit-autofill, .sl-input:-webkit-autofill:hover, .sl-input:-webkit-autofill:focus {
   -webkit-text-fill-color: #f3f3f3; caret-color: #f3f3f3;
   -webkit-box-shadow: 0 0 0 1000px #0c0c0c inset; transition: background-color 9999s ease-in-out 0s;
@@ -127,6 +132,7 @@ const CSS = `
 .sl-btn:hover:not(:disabled) { filter: brightness(1.07); box-shadow: 0 12px 30px rgba(201,161,47,0.34); }
 .sl-btn:active:not(:disabled) { transform: translateY(1px); }
 .sl-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+.sl-btn:focus-visible { outline: 2px solid rgba(212,175,55,0.85) !important; outline-offset: 2px !important; }
 .sl-hint { color: #7c7c7c; font-size: 0.74rem; line-height: 1.5; margin-top: 1.3rem; }
 .sl-foot { color: #585858; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; margin-top: 0.85rem; }
 @media (max-width: 420px) { .sl-card { padding: 2rem 1.4rem 1.6rem; } }
