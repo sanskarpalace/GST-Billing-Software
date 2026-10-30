@@ -218,6 +218,11 @@ function App() {
   };
 
   useEffect(() => {
+    // Reception (manager) never sees the money/invoice bell, so skip the
+    // summary fetch entirely for that role — keeps overdue/due-soon amounts off
+    // their screen and saves the request. Keyed on role so it re-evaluates the
+    // moment whoami resolves the logged-in account.
+    if (role === 'manager') return undefined;
     let cancelled = false;
     const compute = async () => {
       try {
@@ -269,7 +274,7 @@ function App() {
     // dataset every 10 minutes for a badge nobody was looking at.
     const interval = setInterval(() => { if (!document.hidden) compute(); }, 10 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [currentView]); // recompute on view change so the bell stays fresh after the user records a payment
+  }, [currentView, role]); // recompute on view change (bell stays fresh after a payment) and on role change
 
   // ---- Keyboard shortcuts + command palette ----
   // Ctrl+K opens a Spotlight-style command palette; Ctrl+N starts a new
@@ -1016,7 +1021,10 @@ function App() {
             )}
             {/* Notification bell — opens a popover listing overdue / due-soon
                 invoices, GST filing deadlines, and low-stock items. Each row
-                is a single click away from the page that fixes it. */}
+                is a single click away from the page that fixes it. Hidden for
+                the manager (reception) role: its contents are money/invoice
+                status, and every row would navigate to a manager-hidden view. */}
+            {role !== 'manager' && (
             <button
               className="nav-btn"
               onClick={() => setShowNotifs(s => !s)}
@@ -1035,6 +1043,7 @@ function App() {
                 }}>{notifTotal > 99 ? '99+' : notifTotal}</span>
               )}
             </button>
+            )}
             {/* v1.10.80 (#98) - only when a PIN is set. */}
             <LockButton className="nav-btn" label="Lock app" />
             <button
@@ -1166,7 +1175,7 @@ function App() {
       {/* Update modal — release notes + Export-backup-first nudge + Update Now */}
       {/* Notification popover — rendered as a click-out modal so it works on
           tablets too. Grouped by category with a navigate-to button per group. */}
-      {showNotifs && (
+      {showNotifs && role !== 'manager' && (
         <div className="modal-overlay" onClick={() => setShowNotifs(false)}>
           <div className="modal-content" style={{ maxWidth: '480px' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>

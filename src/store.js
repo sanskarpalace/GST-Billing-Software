@@ -23,6 +23,36 @@ async function apiFetch(url, options = {}) {
   return res.json();
 }
 
+// ---- Shared read cache (collapses redundant full-collection downloads) ----
+// On boot several screens ask for the same collection in the same tick — the
+// command-palette search corpus, the Dashboard, and a list view all want
+// bills, for instance. Without this each call was its own full download from
+// the database. We (a) dedupe concurrent fetches by sharing one in-flight
+// promise and (b) serve the result for a short TTL, then bust the entry the
+// moment that collection is written, so a stale read never outlives a save.
+// Only applied to bills/clients/products (fetched redundantly on load and not
+// latency-critical); bookings stay uncached so Front Desk availability is live.
+const READ_CACHE_TTL_MS = 5000;
+const _readCache = new Map(); // key -> { ts, data, promise }
+
+function cachedGet(key, fetcher) {
+  const hit = _readCache.get(key);
+  if (hit?.promise) return hit.promise;                 // in-flight — share it
+  if (hit && (Date.now() - hit.ts) < READ_CACHE_TTL_MS) return Promise.resolve(hit.data);
+  const promise = fetcher()
+    .then((data) => { _readCache.set(key, { ts: Date.now(), data, promise: null }); return data; })
+    .catch((err) => { _readCache.delete(key); throw err; });
+  _readCache.set(key, { ts: hit?.ts || 0, data: hit?.data, promise });
+  return promise;
+}
+
+// Drop cached collections after a write so the next read reflects it. No args
+// clears everything (used after import / restore, which can touch any of them).
+export function invalidateCache(...keys) {
+  if (!keys.length) { _readCache.clear(); return; }
+  keys.forEach((k) => _readCache.delete(k));
+}
+
 // ---- PIN lock (v1.10.77, #84; checked by the server, see AppLock.jsx) ----
 export const getLockStatus = () => apiFetch(`${API}/lock`);
 export const verifyPin = (pin) => apiFetch(`${API}/lock/verify`, { method: 'POST', body: JSON.stringify({ pin }) });
@@ -95,6 +125,7 @@ export const saveStockAlertSettings = async (settings) => {
 export const applyStockChanges = async (changes) => {
   const ids = Object.keys(changes || {}).filter((id) => changes[id]);
   if (!ids.length) return [];
+  invalidateCache('products'); // stock deltas must apply to the live values, not a cached list
   const products = await getAllProducts();
   const saved = [];
   for (const id of ids) {
@@ -200,12 +231,12 @@ export const getNextInvoiceNumber = async (prefix = 'INV', { peek = false, expli
 // message that the UI can show as "Invoice number already exists".
 export const saveBill = async (bill, { overwrite = false } = {}) => {
   const qs = overwrite ? '?overwrite=1' : '';
-  return apiFetch(`${API}/bills${qs}`, { method: 'POST', body: JSON.stringify(bill) });
+  const res = await apiFetch(`${API}/bills${qs}`, { method: 'POST', body: JSON.stringify(bill) });
+  invalidateCache('bills');
+  return res;
 };
 
-export const getAllBills = async () => {
-  return apiFetch(`${API}/bills`);
-};
+export const getAllBills = () => cachedGet('bills', () => apiFetch(`${API}/bills`));
 
 // Notification-badge counts, computed server-side in SQL (see /api/summary).
 // Returns { overdue, dueSoon, lowStock }, each { count, sig, sample[≤3] }.
@@ -222,12 +253,18 @@ export const getNotificationSummary = ({ today, dueSoonEnd, stockThreshold } = {
 };
 
 export const deleteBill = async (id) => {
-  return apiFetch(`${API}/bills/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API}/bills/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('bills');
+  return res;
 };
 
 // v1.9.5 — Automatic backups + trash bin
 export const getBackupsList = async () => apiFetch(`${API}/backups`);
-export const restoreBackup = async (date) => apiFetch(`${API}/backups/${encodeURIComponent(date)}/restore`, { method: 'POST', body: JSON.stringify({}) });
+export const restoreBackup = async (date) => {
+  const res = await apiFetch(`${API}/backups/${encodeURIComponent(date)}/restore`, { method: 'POST', body: JSON.stringify({}) });
+  invalidateCache(); // a restore can replace any collection
+  return res;
+};
 export const triggerBackup = async () => apiFetch(`${API}/backups/now`, { method: 'POST', body: JSON.stringify({}) });
 // v1.10.22 — manual delete for a specific backup date.
 export const deleteBackup = async (date) => apiFetch(`${API}/backups/${encodeURIComponent(date)}`, { method: 'DELETE' });
@@ -237,7 +274,11 @@ export const deleteBackup = async (date) => apiFetch(`${API}/backups/${encodeURI
 export const getBackupFolder = async () => apiFetch(`${API}/backup-folder`);
 export const setBackupFolder = async (folder) => apiFetch(`${API}/backup-folder`, { method: 'POST', body: JSON.stringify({ path: folder }) });
 export const getTrashedBills = async () => apiFetch(`${API}/trash`);
-export const restoreTrashedBill = async (id) => apiFetch(`${API}/trash/${encodeURIComponent(id)}/restore`, { method: 'POST', body: JSON.stringify({}) });
+export const restoreTrashedBill = async (id) => {
+  const res = await apiFetch(`${API}/trash/${encodeURIComponent(id)}/restore`, { method: 'POST', body: JSON.stringify({}) });
+  invalidateCache('bills'); // restored bill rejoins the bills collection
+  return res;
+};
 export const purgeTrashedBill = async (id) => apiFetch(`${API}/trash/${encodeURIComponent(id)}`, { method: 'DELETE' });
 
 // ---- Profile ----
@@ -253,15 +294,16 @@ export const getProfile = async () => {
 export const saveClient = async (client) => {
   const res = await apiFetch(`${API}/clients`, { method: 'POST', body: JSON.stringify(client) });
   if (res.id) client.id = res.id;
+  invalidateCache('clients');
   return client;
 };
 
-export const getAllClients = async () => {
-  return apiFetch(`${API}/clients`);
-};
+export const getAllClients = () => cachedGet('clients', () => apiFetch(`${API}/clients`));
 
 export const deleteClient = async (id) => {
-  return apiFetch(`${API}/clients/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API}/clients/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('clients');
+  return res;
 };
 
 // ---- Front Desk: Rooms ----
@@ -327,18 +369,19 @@ export const deleteTermsTemplate = async (id) => {
 };
 
 // ---- Products / Inventory ----
-export const getAllProducts = async () => {
-  return apiFetch(`${API}/products`);
-};
+export const getAllProducts = () => cachedGet('products', () => apiFetch(`${API}/products`));
 
 export const saveProduct = async (product) => {
   const res = await apiFetch(`${API}/products`, { method: 'POST', body: JSON.stringify(product) });
   if (res.id) product.id = res.id;
+  invalidateCache('products');
   return product;
 };
 
 export const deleteProduct = async (id) => {
-  return apiFetch(`${API}/products/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const res = await apiFetch(`${API}/products/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('products');
+  return res;
 };
 
 // ---- Expenses ----
@@ -609,6 +652,7 @@ export const importData = async (jsonString, selection) => {
   if (sel.meta && data.meta)                     payload.meta = data.meta;
 
   const result = await apiFetch(`${API}/import`, { method: 'POST', body: JSON.stringify(payload) });
+  invalidateCache(); // an import can replace any collection
 
   if (sel.localStorage && data.localStorage) restoreLocalStorage(data.localStorage);
 
