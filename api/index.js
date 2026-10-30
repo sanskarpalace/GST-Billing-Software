@@ -150,6 +150,12 @@ app.get('/api/whoami', async (req, res) => {
   else if (sess.uid === 'env-manager') { user = 'manager'; name = 'Manager'; }
   res.json({ role: sess.role, authRequired: true, user, name });
 });
+// Liveness ping — public and DB-FREE on purpose. The app's server-up heartbeat
+// hits this every few seconds while a tab is open; routing it to a DB read (it
+// used to poll /api/profile, which returns the base64 logo + signature) burned
+// gigabytes of Neon egress per month from one always-open front-desk tab. This
+// only proves the function is reachable; /api/health still reports DB status.
+app.get('/api/ping', (req, res) => { res.json({ ok: true }); });
 
 function requireAuth(req, res, next) {
   if (!process.env.APP_PASSWORD) { req.appRole = 'admin'; req.appUserId = 'dev'; return next(); } // not configured → open (dev)

@@ -254,7 +254,10 @@ function App() {
       } catch { /* offline / server down — leave previous counts */ }
     };
     compute();
-    const interval = setInterval(compute, 10 * 60 * 1000);
+    // Skip the periodic recompute while the tab is hidden — it pulls every bill
+    // and product, so an always-open background tab was re-downloading the whole
+    // dataset every 10 minutes for a badge nobody was looking at.
+    const interval = setInterval(() => { if (!document.hidden) compute(); }, 10 * 60 * 1000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [currentView]); // recompute on view change so the bell stays fresh after the user records a payment
 
@@ -327,8 +330,19 @@ function App() {
     let misses = 0;
 
     const checkServer = async () => {
+      // Pause the heartbeat while the tab is hidden. An always-open front-desk
+      // tab polling in the background added nothing but ran up the DB egress
+      // bill; nobody is watching the "server down" banner when the tab isn't
+      // on screen, and visibilitychange below fires an immediate check the
+      // moment it comes back.
+      if (document.hidden) return;
+      // Fetch the full profile (base64 logo + signature) ONCE. After that the
+      // heartbeat hits the DB-free /api/ping so a tab left open all day doesn't
+      // re-download the profile every few seconds from Neon — that single bug
+      // was enough to blow through the monthly network-transfer allowance.
+      const url = profileLoaded.current ? '/api/ping' : '/api/profile';
       try {
-        const res = await fetch('/api/profile', { signal: AbortSignal.timeout(8000) });
+        const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
         if (res.ok) {
           if (cancelled) return;
           misses = 0;
@@ -356,12 +370,19 @@ function App() {
     };
 
     checkServer();
-    // Keep checking every 5 seconds (fast when down, normal heartbeat when up)
-    retryTimer.current = setInterval(checkServer, 5000);
+    // Heartbeat every 30s while up (was every 5s against /api/profile, which
+    // hammered the database). Recovery still feels instant because we also
+    // re-check the moment the tab regains focus / visibility.
+    retryTimer.current = setInterval(checkServer, 30000);
+    const onVisible = () => { if (!document.hidden) checkServer(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
 
     return () => {
       cancelled = true;
       if (retryTimer.current) clearInterval(retryTimer.current);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, []);
 
