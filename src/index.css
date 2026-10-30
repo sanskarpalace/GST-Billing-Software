@@ -953,12 +953,16 @@ textarea.form-input { resize: vertical; min-height: 60px; }
   border-radius: 7px;
   border: none;
   cursor: pointer;
+  /* Explicit, theme-aware colour so plain icon buttons never fall back to the
+     system ButtonText (near-black), which vanished on the near-black dark bg. */
+  background: transparent;
+  color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
 }
-.icon-btn:hover { transform: translateY(-1px); }
+.icon-btn:hover { transform: translateY(-1px); background: var(--bg-tertiary); color: var(--text); }
 .icon-btn:active { transform: translateY(0); }
 .icon-btn:focus-visible {
   outline: 2px solid var(--primary);
