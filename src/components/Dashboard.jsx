@@ -9,8 +9,6 @@ import LockButton from './LockButton';
 import ActionsMenu from './ActionsMenu';
 import BulkCsvImport from './BulkCsvImport';
 import PrintPreviewModal from './PrintPreviewModal';
-import SupportNudge from './SupportNudge';
-import WelcomeCard from './WelcomeCard';
 import { toast } from './Toast';
 import { confirmAction } from './ConfirmModal';
 
@@ -202,7 +200,7 @@ function ReceiptModal({ target, onClose }) {
   );
 }
 
-export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConvert, onOpenProducts, onOpenSettings, onOpenGuide, onOpenSupport, activeProfile }) {
+export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConvert, onOpenProducts, onOpenSettings, onOpenGuide, activeProfile }) {
   // v1.10.64 — requested (#55, @sangwanmail-eng): "An invoice belonging to one
   // company should not appear under the other."
   //
@@ -1255,8 +1253,6 @@ export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConve
           two. This stays until the work is actually done, ticks itself off
           from real data rather than from "have you seen this screen", and
           removes itself for good once everything is set up. */}
-      {onOpenSupport && <WelcomeCard invoiceCount={bills.length} onOpenSupport={onOpenSupport} />}
-
       {startedSteps && (
         <div className="glass-panel p-6 mb-6">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.9rem' }}>
@@ -1296,8 +1292,6 @@ export default function Dashboard({ onNew, onEdit, onPrint, onDuplicate, onConve
           </div>
         </div>
       )}
-
-      {!startedSteps && onOpenSupport && <SupportNudge invoiceCount={bills.length} onOpen={onOpenSupport} />}
 
       {overdueBills.length > 0 && (
         <div className="overdue-banner" onClick={() => { setStatusFilter('overdue'); }}

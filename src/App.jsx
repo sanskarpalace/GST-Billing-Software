@@ -9,7 +9,7 @@ import { getAllProfiles, saveProfile, getEnabledModules, getAllBills, getAllProd
 // managers land on Front Desk instead and bill events from there.
 const MANAGER_HIDDEN_VIEWS = new Set(['dashboard', 'expenses', 'reports', 'filing', 'incometax', 'settings', 'staff']);
 const managerHome = (role) => (role === 'manager' ? 'frontdesk' : 'dashboard');
-import { isModuleEnabled, getUpcomingFilings, localToday, toLocalIsoDate, DOCS_URL } from './utils';
+import { isModuleEnabled, getUpcomingFilings, localToday, toLocalIsoDate, isHostedDeployment, DOCS_URL } from './utils';
 // v1.10.4 — Route-level lazy loading. Prior App.jsx synchronously
 // imported all 12 views (~15k LOC combined), so a first-paint on
 // Dashboard downloaded and parsed GSTReturns (1952), InvoiceGenerator
@@ -43,8 +43,6 @@ const PurchaseBills = lazy(() => import('./components/PurchaseBills'));
 const FrontDesk = lazy(() => import('./components/FrontDesk'));
 const UsersManager = lazy(() => import('./components/UsersManager'));
 const ControlPanel = lazy(() => import('./components/ControlPanel'));
-const SupportView = lazy(() => import('./components/SupportView'));
-import StarBanner from './components/StarBanner';
 import AppFooter from './components/AppFooter';
 import LockButton from './components/LockButton';
 import LoginScreen from './components/LoginScreen';
@@ -83,7 +81,7 @@ function App() {
       const params = new URLSearchParams(window.location.search);
       const v = params.get('view');
       // v1.10.74 - 'controlpanel' added so ?view=controlpanel deep links work too.
-      const valid = ['dashboard', 'new', 'frontdesk', 'clients', 'inventory', 'expenses', 'purchases', 'recurring', 'receipts', 'reports', 'filing', 'incometax', 'settings', 'staff', 'controlpanel', 'support'];
+      const valid = ['dashboard', 'new', 'frontdesk', 'clients', 'inventory', 'expenses', 'purchases', 'recurring', 'receipts', 'reports', 'filing', 'incometax', 'settings', 'staff', 'controlpanel'];
       if (v && valid.includes(v)) {
         // Strip the query string so a refresh doesn't keep snapping back to
         // the shortcut target — only the *first* navigation honours it.
@@ -117,6 +115,9 @@ function App() {
 
   const [serverStatus, setServerStatus] = useState('checking'); // 'checking' | 'online' | 'offline'
   const profileLoaded = useRef(false);
+  // Hosted (online) vs local desktop build — gates desktop-only UI (Control
+  // Panel, local-disk backups, the "launch the app" screen, desktop updater).
+  const isHosted = isHostedDeployment();
   const [allProfiles, setAllProfiles] = useState([]);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef(null);
@@ -636,9 +637,8 @@ function App() {
       acts.push({ label: `Go to ${item.label}`, hint: '', category: 'nav', run: item.onClick || (() => setCurrentView(item.id)) });
     });
     acts.push({ label: 'Go to Settings', hint: '', category: 'nav', run: () => setCurrentView('settings') });
-    // v1.10.74 - Control Panel has its own sidebar button but was missing here.
-    acts.push({ label: 'Go to Control Panel', hint: '', category: 'nav', run: () => setCurrentView('controlpanel') });
-    acts.push({ label: 'Go to Support & About', hint: '', category: 'nav', run: () => setCurrentView('support') });
+    // Control Panel is a desktop-only screen (local backups / folders / updater).
+    if (!isHosted) acts.push({ label: 'Go to Control Panel', hint: '', category: 'nav', run: () => setCurrentView('controlpanel') });
     acts.push({ label: 'Toggle dark mode', hint: '', category: 'action', run: () => setDarkMode(d => !d) });
     acts.push({ label: 'Show keyboard shortcuts', hint: 'Ctrl+/', category: 'help', run: () => setShowShortcutsHelp(true) });
     if (updateInfo?.updateAvailable) {
@@ -703,7 +703,7 @@ function App() {
       acts.push({ label: `⚙️ Settings → ${s}`, hint: '', category: 'settings', run: () => openSettingsAt(sectionId) });
     });
     return acts;
-  }, [navItems, updateInfo, handleNewInvoice, searchCorpus]);
+  }, [navItems, updateInfo, handleNewInvoice, searchCorpus, isHosted]);
 
   const filteredPalette = paletteActions.filter(a =>
     !paletteQuery.trim() || a.label.toLowerCase().includes(paletteQuery.toLowerCase())
@@ -827,9 +827,8 @@ function App() {
     // starts; on a hosted deployment (e.g. Vercel) there is nothing for them to
     // launch — the backend is simply unreachable (a deploy, or the database
     // being temporarily unavailable), so telling them to "double-click Free GST
-    // Billing on your Desktop" is wrong and confusing. Detect by hostname.
-    const host = typeof window !== 'undefined' ? window.location.hostname : '';
-    const isHosted = !!host && host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]' && !host.endsWith('.local');
+    // Billing on your Desktop" is wrong and confusing. isHosted (hostname-based)
+    // picks the right copy.
     return (
       <div className="server-down-overlay">
         <div className="server-down-modal">
@@ -1144,9 +1143,8 @@ function App() {
         </div>
       )}
       <div className="main-content">
-        {currentView !== 'new' && <StarBanner />}
         {currentView === 'dashboard' && role !== 'manager' && (
-          <Dashboard onNew={handleNewInvoice} onEdit={handleEditInvoice} onPrint={handlePrintInvoice} onDuplicate={handleDuplicateInvoice} onConvert={handleConvertToInvoice} onOpenProducts={() => setCurrentView('inventory')} onOpenSettings={() => setCurrentView('settings')} onOpenSupport={() => setCurrentView('support')} activeProfile={profile} />
+          <Dashboard onNew={handleNewInvoice} onEdit={handleEditInvoice} onPrint={handlePrintInvoice} onDuplicate={handleDuplicateInvoice} onConvert={handleConvertToInvoice} onOpenProducts={() => setCurrentView('inventory')} onOpenSettings={() => setCurrentView('settings')} activeProfile={profile} />
         )}
         {currentView === 'new' && (
           <InvoiceGenerator
@@ -1199,15 +1197,12 @@ function App() {
         {currentView === 'staff' && role !== 'manager' && (
           <UsersManager currentUser={userInfo?.user} />
         )}
-        {currentView === 'controlpanel' && (
+        {currentView === 'controlpanel' && !isHosted && (
           <ControlPanel />
         )}
-        {currentView === 'support' && (
-          <SupportView />
-        )}
         </Suspense>
-        {/* Version + DiceCodes line: Dashboard only, so it never takes space on working screens. */}
-        {currentView === 'dashboard' && <AppFooter onOpenSupport={() => setCurrentView('support')} />}
+        {/* Branded footer: Dashboard only, so it never takes space on working screens. */}
+        {currentView === 'dashboard' && <AppFooter />}
       </div>
 
       {/* Update modal — release notes + Export-backup-first nudge + Update Now */}

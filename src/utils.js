@@ -690,6 +690,18 @@ export const isCreditNote = (bill) => (bill?.invoiceType || '') === 'credit-note
 // +1 for a sale, -1 for a credit note, 0 for quotes, challans and anything cancelled.
 export const salesSign = (bill) => (countsAsSales(bill) ? 1 : (isCreditNote(bill) ? -1 : 0));
 
+// True when the app is served from a hosted/online deployment rather than the
+// local desktop build. Desktop-only surfaces (launch instructions, local-disk
+// backups, the Control Panel, the desktop updater) are hidden when this is
+// true. Detected by hostname so it needs no server round-trip; falls back to
+// false (treat as local) if window is unavailable.
+export const isHostedDeployment = () => {
+  try {
+    const h = window.location.hostname;
+    return !!h && h !== 'localhost' && h !== '127.0.0.1' && h !== '[::1]' && !h.endsWith('.local');
+  } catch { return false; }
+};
+
 // One invoice line's tax for the GST returns: taxable value, CGST, SGST or
 // UTGST, IGST and cess.
 // v1.10.77 (#89) - the line tax is rounded to the paisa, as on the invoice

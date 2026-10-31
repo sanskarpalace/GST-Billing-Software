@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { getProfile, saveProfile, exportAllData, importData, inspectBackup, getTermsTemplates, saveTermsTemplate, deleteTermsTemplate, getAllProfiles, saveBusinessProfile, deleteBusinessProfile, getRegionMode, setRegionMode, getEnabledModules, setEnabledModules, getStockAlertSettings, saveStockAlertSettings, renameNumberSeries, getInvoiceDisplayOptions, saveInvoiceDisplayOptions } from '../store';
 import { ensureToken, findOrCreateFolder, uploadJSON } from '../services/googleDrive';
-import { getCountryConfig, getStatesForCountry, validateTaxId, getCountriesForRegion, FEATURE_GROUPS, isModuleEnabled, getPaymentAccounts, createEmptyAccount, maskAccountNumber, reorderAccounts, setDefaultAccount, isValidUpiId, findSameBusiness, businessKeyOf, stockDelta } from '../utils';
+import { getCountryConfig, getStatesForCountry, validateTaxId, getCountriesForRegion, FEATURE_GROUPS, isModuleEnabled, getPaymentAccounts, createEmptyAccount, maskAccountNumber, reorderAccounts, setDefaultAccount, isValidUpiId, findSameBusiness, businessKeyOf, stockDelta, isHostedDeployment } from '../utils';
 // v1.10.36 — lucide's `Image` icon was imported as `Image`, which
 // SHADOWED the browser's `HTMLImageElement` constructor. Reported:
 // "Uncaught TypeError: et is not a constructor at onChange" on logo
@@ -38,6 +38,13 @@ const JUMP_NAV_SECTIONS = [
 ];
 
 export default function SettingsView({ onSaved }) {
+  // Hosted (online) build: hide desktop-only sections (local-disk auto-backups,
+  // "Google Drive for Desktop" sync, and the desktop updater). Trash stays —
+  // it works online too.
+  const isHosted = isHostedDeployment();
+  const jumpSections = isHosted
+    ? JUMP_NAV_SECTIONS.filter(([id]) => id !== 'section-cloud' && id !== 'section-updates')
+    : JUMP_NAV_SECTIONS;
   const [profile, setProfile] = useState({
     businessName: '', address: '', state: '', gstin: '', pan: '',
     email: '', phone: '', bankName: '', accountNumber: '', ifsc: '',
@@ -124,7 +131,7 @@ export default function SettingsView({ onSaved }) {
   // popup on every exit. The sticky bar already makes unsaved work visible
   // without interrupting anyone.
   useEffect(() => {
-    const els = JUMP_NAV_SECTIONS
+    const els = jumpSections
       .map(([id]) => document.getElementById(id))
       .filter(Boolean);
     if (!els.length) return;
@@ -590,7 +597,7 @@ export default function SettingsView({ onSaved }) {
     try {
       const text = await file.text();
       const inspection = inspectBackup(text);
-      if (!inspection.valid) { toast("This file doesn't look like a Free GST Billing backup.", 'error'); return; }
+      if (!inspection.valid) { toast("This file doesn't look like a Sanskar Palace backup.", 'error'); return; }
       setImportInspection(inspection);
       setImportJsonText(text);
       // Auto-tick only the parts that actually have data in the file
@@ -802,7 +809,7 @@ export default function SettingsView({ onSaved }) {
             <p className="page-subtitle" style={{ margin: '0.15rem 0 0' }}>
               Business profile, branding, integrations & data
               <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem', borderRadius: 999, background: 'var(--bg-secondary)', border: '1px solid var(--border)', marginLeft: '0.55rem', fontWeight: 600 }}>
-                {JUMP_NAV_SECTIONS.length} sections
+                {jumpSections.length} sections
               </span>
             </p>
           </div>
@@ -842,7 +849,7 @@ export default function SettingsView({ onSaved }) {
         <nav className="settings-jumpnav" aria-label="Settings sections" style={{
           display: 'flex', gap: '0.3rem', flexWrap: 'wrap', alignItems: 'center',
         }}>
-          {JUMP_NAV_SECTIONS.map(([id, label]) => {
+          {jumpSections.map(([id, label]) => {
             const active = activeSection === id;
             return (
               <a key={id} href={`#${id}`}
@@ -1551,7 +1558,9 @@ export default function SettingsView({ onSaved }) {
         )}
       </div>
 
-      {/* ---- Cloud Backup ---- */}
+      {/* ---- Cloud Backup (desktop only: it syncs a local Saved-Invoices
+           folder, which the hosted build has no equivalent of) ---- */}
+      {!isHosted && (
       <div id="section-cloud" className="glass-panel p-6 mb-6" style={{ order: 9 }}>
         <h3 className="section-title">Cloud Backup (Google Drive)</h3>
         <p className="page-subtitle mb-4">
@@ -1625,6 +1634,7 @@ export default function SettingsView({ onSaved }) {
           </div>
         </details>
       </div>
+      )}
 
       {/* ---- Terms Templates ---- */}
       <div id="section-terms" className="glass-panel p-6 mb-6" style={{ order: 3 }}>
@@ -1708,7 +1718,8 @@ export default function SettingsView({ onSaved }) {
            kept as a comment so a code search for "Multi-Business
            Profiles" still lands somewhere sensible. */}
 
-      {/* ---- App Updates ---- */}
+      {/* ---- App Updates (desktop only: the hosted build updates by redeploy) ---- */}
+      {!isHosted && (
       <div id="section-updates" className="glass-panel p-6 mb-6" style={{ order: 11 }}>
         <h3 className="section-title">App Updates</h3>
         <p className="page-subtitle mb-4">Check if a newer version is available.</p>
@@ -1749,6 +1760,7 @@ export default function SettingsView({ onSaved }) {
           </div>
         )}
       </div>
+      )}
 
       <div id="section-data" className="glass-panel p-6 mb-6" style={{ order: 10 }}>
         <h3 className="section-title">Data Management</h3>
@@ -1912,6 +1924,9 @@ function EditIcon({ size }) {
 // v1.9.5 — Backup Management + Trash Bin
 // ============================================================
 function BackupAndTrashPanel() {
+  // Hosted build has no local-disk auto-backups or backup folder (the serverless
+  // backend answers those as unsupported), so online this panel is Trash only.
+  const isHosted = isHostedDeployment();
   const [backups, setBackups] = useState([]);
   const [trash, setTrash] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -2027,12 +2042,15 @@ function BackupAndTrashPanel() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', marginBottom: '0.75rem' }}>
         <div>
           <h3 className="section-title" style={{ marginTop: 0, marginBottom: '0.25rem' }}>
-            💾 Backup Management + 🗑 Trash Bin
+            {isHosted ? '🗑 Trash Bin' : '💾 Backup Management + 🗑 Trash Bin'}
           </h3>
           <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: 0 }}>
-            Automatic daily snapshots kept for 30 days · Deleted invoices stay in the trash for 30 days.
+            {isHosted
+              ? 'Deleted invoices stay in the trash for 30 days, then are removed.'
+              : 'Automatic daily snapshots kept for 30 days · Deleted invoices stay in the trash for 30 days.'}
           </p>
         </div>
+        {!isHosted && (
         <button className="btn btn-secondary" style={{ fontSize: '0.82rem' }}
           onClick={async () => {
             // v1.10.74 - show an error instead of failing silently
@@ -2046,9 +2064,12 @@ function BackupAndTrashPanel() {
           }}>
           <SaveIcon size={14} /> Backup now
         </button>
+        )}
       </div>
 
-      {/* v1.10.80 (#99) - requested: backups only on C: are lost when Windows fails. */}
+      {/* v1.10.80 (#99) - requested: backups only on C: are lost when Windows fails.
+          Desktop only — a hosted deployment has no server-side disk to copy to. */}
+      {!isHosted && (
       <div style={{ padding: '0.85rem', background: 'var(--bg-secondary)', borderRadius: 8, marginTop: '0.75rem' }}>
         <label className="form-label" htmlFor="backup-folder">Also keep a copy of every daily backup in this folder</label>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -2068,9 +2089,11 @@ function BackupAndTrashPanel() {
         </p>
         {backupFolder.error && <p role="alert" style={{ color: 'var(--danger)', fontSize: '0.8rem', margin: '0.35rem 0 0' }}>{backupFolder.error}</p>}
       </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
-        {/* Backups list */}
+        {/* Backups list — desktop only */}
+        {!isHosted && (
         <div style={{ padding: '0.85rem', background: 'var(--bg-secondary)', borderRadius: 8 }}>
           <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem' }}>📅 Daily backups ({backups.length})</h4>
           {loading && backups.length === 0 && <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Loading…</p>}
@@ -2105,6 +2128,7 @@ function BackupAndTrashPanel() {
             ))}
           </div>
         </div>
+        )}
 
         {/* Trash bin */}
         <div style={{ padding: '0.85rem', background: 'var(--bg-secondary)', borderRadius: 8 }}>

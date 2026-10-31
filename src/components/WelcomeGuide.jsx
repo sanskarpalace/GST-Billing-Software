@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Building2, FileText, BarChart3, Shield, ChevronRight, ChevronLeft, Check, ArrowRight, Image, PenTool } from 'lucide-react';
 import { saveProfile, setRegionMode } from '../store';
-import { getStatesForCountry, getCountryConfig, detectCountryFromBrowser, createEmptyAccount } from '../utils';
+import { getStatesForCountry, getCountryConfig, detectCountryFromBrowser, createEmptyAccount, isHostedDeployment } from '../utils';
 import { toast } from './Toast';
 
 const STEPS = [
@@ -13,6 +13,9 @@ const STEPS = [
 
 export default function WelcomeGuide({ onComplete }) {
   const [step, setStep] = useState(0);
+  // Online build stores data in the cloud; the desktop build keeps it on-device.
+  // The welcome copy must not promise local-only privacy when hosted.
+  const isHosted = isHostedDeployment();
   // v1.10.74 - region starts as India (below), so the country must too; the
   // browser country is only used when "Outside India" is picked.
   const [profile, setProfile] = useState({
@@ -115,9 +118,11 @@ export default function WelcomeGuide({ onComplete }) {
               <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
                 <FileText size={32} color="white" />
               </div>
-              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>Welcome to Free GST Billing Software</h1>
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '0.75rem', color: 'var(--text-primary)' }}>Welcome to Sanskar Palace Hotel &amp; Resort</h1>
               <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', lineHeight: 1.6 }}>
-                Free, open-source GST billing software that runs 100% on your computer. Your data never leaves your machine.
+                {isHosted
+                  ? 'Billing and front-desk management for Sanskar Palace Hotel & Resort. Your data is stored securely and available on every device you sign in from.'
+                  : 'Billing and front-desk management for Sanskar Palace Hotel & Resort. It runs on this computer and your data stays on this machine.'}
               </p>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem', textAlign: 'left' }}>
@@ -125,7 +130,9 @@ export default function WelcomeGuide({ onComplete }) {
                   { title: 'Create Invoices', desc: 'Tax Invoice, Proforma, Credit Note, Bill of Supply, Delivery Challan' },
                   { title: 'Auto GST Calculation', desc: 'CGST/SGST for same state, IGST for different state — automatic' },
                   { title: 'GST Filing Ready', desc: 'GSTR-1, GSTR-3B, HSN reports auto-generated. Download CSVs for portal.' },
-                  { title: '100% Private', desc: 'All data stored locally as files. No cloud, no signup, no tracking.' },
+                  isHosted
+                    ? { title: 'Secure Access', desc: 'Login-protected. Your data is stored securely and never shared with anyone.' }
+                    : { title: '100% Private', desc: 'All data stored locally as files. No cloud, no signup, no tracking.' },
                 ].map((item, i) => (
                   <div key={i} style={{ padding: '1rem', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                     <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.25rem', color: 'var(--text-primary)' }}>{item.title}</div>
@@ -320,7 +327,9 @@ export default function WelcomeGuide({ onComplete }) {
 
               <div style={{ padding: '1rem', borderRadius: '8px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', marginBottom: '1.5rem' }}>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  All your data is stored locally in the <code style={{ background: 'var(--border-color)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>data/</code> folder on this computer. Nothing is sent to any server. You can export a full backup anytime from Settings.
+                  {isHosted
+                    ? <>Your data is stored securely and is available on every device you sign in from. You can export a full backup anytime from Settings.</>
+                    : <>All your data is stored locally in the <code style={{ background: 'var(--border-color)', padding: '0.1rem 0.3rem', borderRadius: '3px' }}>data/</code> folder on this computer. Nothing is sent to any server. You can export a full backup anytime from Settings.</>}
                 </div>
               </div>
             </div>

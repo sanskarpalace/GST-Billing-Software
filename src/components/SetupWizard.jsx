@@ -77,7 +77,7 @@ export default function SetupWizard({ onClose }) {
       <div className="modal-content" style={{ maxWidth: '640px', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '1.35rem' }}>👋 Welcome to Free GST Billing</h2>
+            <h2 style={{ margin: 0, fontSize: '1.35rem' }}>👋 Welcome to Sanskar Palace Hotel &amp; Resort</h2>
             <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
               Step {step} of 3 · Takes 90 seconds
             </p>
