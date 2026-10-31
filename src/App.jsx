@@ -822,35 +822,73 @@ function App() {
   }
 
   if (serverDown) {
+    // The desktop build and the hosted build share this screen but need
+    // different copy. On localhost the server really is a program the user
+    // starts; on a hosted deployment (e.g. Vercel) there is nothing for them to
+    // launch — the backend is simply unreachable (a deploy, or the database
+    // being temporarily unavailable), so telling them to "double-click Free GST
+    // Billing on your Desktop" is wrong and confusing. Detect by hostname.
+    const host = typeof window !== 'undefined' ? window.location.hostname : '';
+    const isHosted = !!host && host !== 'localhost' && host !== '127.0.0.1' && host !== '[::1]' && !host.endsWith('.local');
     return (
       <div className="server-down-overlay">
         <div className="server-down-modal">
           <FileText size={48} color="#3b82f6" />
-          <h2>Free GST Billing Software Needs a Quick Start</h2>
-          <p>
-            Your data is <strong>100% safe</strong> on your computer — nothing is lost.
-            The app just needs to be started once.
-          </p>
-          {/* v1.10.69 - there was an "Open GST Billing" button here, linking to
-              freegstbill://start. Only the old Install FreeGSTBill.bat ever
-              registered that protocol, and it stopped shipping in v1.10.44, so
-              on every current install the button did nothing at all. There is
-              also nothing it could do: a web page cannot start a program, and
-              this screen is being served from the offline cache precisely
-              because the server is not running. The steps below are the only
-              real answer, so they are no longer the fallback. See ERR-019. */}
-          <div className="server-down-steps">
-            <p className="server-down-hint">How to start it:</p>
-            <ol>
-              <li>Double-click <strong>Free GST Billing</strong> on your Desktop, then click <strong>Open App</strong></li>
-              <li>Or search <strong>"Free GST Billing"</strong> in the Start Menu</li>
-            </ol>
-          </div>
-          <p className="server-down-safe">All your invoices, clients, and data are safely stored on your computer. They are never deleted or shared.</p>
-          <div className="server-down-waiting">
-            <div className="server-down-spinner" />
-            <span>Starting... this page will open automatically.</span>
-          </div>
+          {isHosted ? (
+            <>
+              <h2>Temporarily unavailable</h2>
+              <p>
+                We can’t reach the server right now. <strong>Your data is safe</strong> — nothing is
+                lost. This page reconnects on its own as soon as the service is back.
+              </p>
+              <div className="server-down-steps">
+                <p className="server-down-hint">What you can do:</p>
+                <ol>
+                  <li>Leave this tab open — it keeps retrying and will load automatically.</li>
+                  <li>
+                    Or{' '}
+                    <button type="button" onClick={() => window.location.reload()}
+                      style={{ background: 'none', border: 0, color: 'var(--primary)', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', padding: 0 }}>
+                      try again now
+                    </button>.
+                  </li>
+                </ol>
+              </div>
+              <p className="server-down-safe">Your invoices, clients, and bookings are stored safely and are never deleted.</p>
+              <div className="server-down-waiting">
+                <div className="server-down-spinner" />
+                <span>Trying to reconnect…</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <h2>Free GST Billing Software Needs a Quick Start</h2>
+              <p>
+                Your data is <strong>100% safe</strong> on your computer — nothing is lost.
+                The app just needs to be started once.
+              </p>
+              {/* v1.10.69 - there was an "Open GST Billing" button here, linking to
+                  freegstbill://start. Only the old Install FreeGSTBill.bat ever
+                  registered that protocol, and it stopped shipping in v1.10.44, so
+                  on every current install the button did nothing at all. There is
+                  also nothing it could do: a web page cannot start a program, and
+                  this screen is being served from the offline cache precisely
+                  because the server is not running. The steps below are the only
+                  real answer, so they are no longer the fallback. See ERR-019. */}
+              <div className="server-down-steps">
+                <p className="server-down-hint">How to start it:</p>
+                <ol>
+                  <li>Double-click <strong>Free GST Billing</strong> on your Desktop, then click <strong>Open App</strong></li>
+                  <li>Or search <strong>"Free GST Billing"</strong> in the Start Menu</li>
+                </ol>
+              </div>
+              <p className="server-down-safe">All your invoices, clients, and data are safely stored on your computer. They are never deleted or shared.</p>
+              <div className="server-down-waiting">
+                <div className="server-down-spinner" />
+                <span>Starting... this page will open automatically.</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     );
