@@ -243,6 +243,10 @@ function TallyLayout({ ctx }) {
     ctx.showReverseChargeLine && ['Reverse Charge', ctx.reverseChargeText],
     t.placeOfSupply && ctx.placeOfSupply && ['Place of Supply', stateWithCode(ctx.placeOfSupply)],
   ].filter(Boolean);
+  // "Terms of Delivery" is a goods/logistics box — useless on a hotel/service
+  // bill, where it always printed empty and added a page-stretching blank row.
+  // Show it only when it actually has text.
+  const showDeliveryTerms = !!String(orderMap.deliveryTerms || '').trim();
   const refCell = (k, v) => (
     <td style={{ ...cell, width: '25%', height: 34 }}>
       <div style={small}>{k}</div>
@@ -270,7 +274,7 @@ function TallyLayout({ ctx }) {
             <tr key={r[0]} {...blockProps}>{refCell(r[0], r[1])}{refCell(r[2], r[3])}</tr>
           ))}
           <tr {...blockProps}>
-            <td style={cell} rowSpan={3 + (extraRef.length ? 1 : 0)}>
+            <td style={cell} rowSpan={2 + (extraRef.length ? 1 : 0) + (showDeliveryTerms ? 1 : 0)}>
               {shipTo && <><PartyBlock ctx={ctx} heading="Consignee (Ship to)" party={shipTo} /><div style={{ height: 6 }} /></>}
               <PartyBlock ctx={ctx} heading="Buyer (Bill to)" party={client} withContact />
             </td>
@@ -284,12 +288,14 @@ function TallyLayout({ ctx }) {
               </td>
             </tr>
           )}
-          <tr {...blockProps}>
-            <td style={{ ...cell, height: 48 }} colSpan={2}>
-              <div style={small}>Terms of Delivery</div>
-              <div>{orderMap.deliveryTerms || ''}</div>
-            </td>
-          </tr>
+          {showDeliveryTerms && (
+            <tr {...blockProps}>
+              <td style={{ ...cell, height: 48 }} colSpan={2}>
+                <div style={small}>Terms of Delivery</div>
+                <div>{orderMap.deliveryTerms}</div>
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
       {orderMap.workDetails && (
