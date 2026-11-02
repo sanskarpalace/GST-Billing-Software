@@ -278,10 +278,16 @@ const withLock = (meta, lock) => (lock ? { ...withoutLock(meta), [LOCK_KEY]: loc
 
 // Wrap an async route so a thrown error becomes a clean 500 instead of a
 // hung request / unhandled rejection.
-const h = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((err) => {
-  console.error('[api error]', req.method, req.path, err);
-  if (!res.headersSent) res.status(500).json({ error: 'Internal server error', code: 'server-error' });
-});
+// NOTE: declared as a hoisted `function` (not a `const` arrow) on purpose —
+// /api/summary above calls h(...) at module-evaluation time (app.get's args
+// run immediately), which with a `const` threw a TDZ "Cannot access 'h'
+// before initialization" that crashed the whole function on cold start.
+function h(fn) {
+  return (req, res) => Promise.resolve(fn(req, res)).catch((err) => {
+    console.error('[api error]', req.method, req.path, err);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error', code: 'server-error' });
+  });
+}
 
 // Date helpers (ported from server.js, used by recurring generate).
 const isoDay = (d) => d.toISOString().split('T')[0];
