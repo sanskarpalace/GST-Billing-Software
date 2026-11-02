@@ -968,7 +968,23 @@ const InvoicePreview = React.forwardRef(({ profile: profileProp, client, details
   // v1.10.73 - Boxed grid / Tally style get everything already worked out
   // above, so their numbers are the same as every other design's.
   const isGrid = pdfStyle === 'boxed' || pdfStyle === 'tally';
-  const sanitizedTerms = customTerms ? splitNumberedTerms(DOMPurify.sanitize(customTerms)) : '';
+  // A court-jurisdiction clause ("Subject to <place> jurisdiction only.") is not
+  // a Terms & Conditions entry. Invoices saved before the Jurisdiction field
+  // existed stored it in customTerms, which would otherwise print under a
+  // "Terms & Conditions" heading. If the stored terms are ONLY a jurisdiction
+  // line, drop them here so the heading disappears — the clause still prints as
+  // its own standalone footer line from profile.jurisdiction. Real terms
+  // (anything beyond a lone jurisdiction sentence) are left untouched.
+  const isJurisdictionOnlyTerms = (html) => {
+    if (!html) return false;
+    const text = String(html).replace(/<[^>]*>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+    if (!text) return false;
+    const juris = String(profile?.jurisdiction || '').trim();
+    if (juris && text.toLowerCase() === juris.toLowerCase()) return true;
+    return /^subject to\b.+\bjurisdiction\b.*\bonly\b\.?$/i.test(text);
+  };
+  const displayTerms = isJurisdictionOnlyTerms(customTerms) ? '' : customTerms;
+  const sanitizedTerms = displayTerms ? splitNumberedTerms(DOMPurify.sanitize(displayTerms)) : '';
   const sanitizedNotes = customNotes ? splitNumberedTerms(DOMPurify.sanitize(customNotes)) : '';
   const taxedRates = [...new Set(items.map((it) => lineCalc(it)).filter((l) => l.tax > 0).map((l) => l.rate))];
   const gridSig = (() => {
@@ -1427,7 +1443,7 @@ const InvoicePreview = React.forwardRef(({ profile: profileProp, client, details
               (same mechanism the extraSections feature uses). buildPDF's
               extraPages loop then captures it as its own PDF page. */}
           {!_ps.termsSeparatePage && (() => {
-            const termsHtml = customTerms ? splitNumberedTerms(DOMPurify.sanitize(customTerms)) : '';
+            const termsHtml = displayTerms ? splitNumberedTerms(DOMPurify.sanitize(displayTerms)) : '';
             const hasTerms = htmlHasText(termsHtml);
             return showTerms && hasTerms ? (
               <div className="inv-footer-block">
@@ -1474,7 +1490,7 @@ const InvoicePreview = React.forwardRef(({ profile: profileProp, client, details
         {_ps.termsSeparatePage && (customTerms || customNotes) && (
           <div data-pdf-page="terms" style={{ padding: '2rem', pageBreakBefore: 'always', breakBefore: 'page' }}>
             {(() => {
-              const termsHtml = customTerms ? splitNumberedTerms(DOMPurify.sanitize(customTerms)) : '';
+              const termsHtml = displayTerms ? splitNumberedTerms(DOMPurify.sanitize(displayTerms)) : '';
               const hasTerms = htmlHasText(termsHtml);
               return showTerms && hasTerms ? (
                 <div className="inv-footer-block">
