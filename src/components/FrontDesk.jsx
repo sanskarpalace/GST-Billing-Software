@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, ReceiptText } from 'lucide-react';
+import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, ReceiptText, Package, Check } from 'lucide-react';
 import { toast } from './Toast';
 import HelpButton from './HelpButton';
 import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient, getAllReceipts } from '../store';
@@ -73,6 +73,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   const [blockSearch, setBlockSearch] = useState('');
   const [blockFilter, setBlockFilter] = useState('all'); // all | upcoming | past
   const [eventDetail, setEventDetail] = useState(null);   // selected event name
+  const [itemsModal, setItemsModal] = useState(null);     // booking whose room-items are being edited
 
   const currency = profile?.currency || 'INR';
   const today = localToday();
@@ -123,6 +124,12 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
 
   const doCheckIn = async (b) => { if (await persistBooking({ ...b, status: 'checked-in', checkedInAt: new Date().toISOString() })) toast(`${b.guestName || 'Guest'} checked in`, 'success'); };
 
+  // Persist the list of items issued to a room (amenities to collect back and/or
+  // chargeable extras). Stored on the booking so it survives reload and syncs.
+  const saveRoomItems = async (booking, roomItems) => {
+    if (await persistBooking({ ...booking, roomItems })) { setItemsModal(null); toast('Room items saved', 'success'); }
+  };
+
   // Build the pre-filled GST invoice for a stay (used by checkout-and-bill and
   // by the "Bill" action in History for an already-checked-out stay).
   const billFromBooking = (b) => {
@@ -139,6 +146,18 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
       };
     });
     if (!items.length) items.push({ id: `${Date.now()}`, name: 'Room charges', hsn: '996311', quantity: nights, unit: 'Day', rate: Number(b.ratePerNight || 0), discount: 0, taxPercent: 5, cessPercent: 0 });
+    // Chargeable extras issued to the room (dinner, water, cold drinks, laundry…)
+    // flow onto the same invoice as their own line items, after room charges.
+    (b.roomItems || []).filter((it) => it.chargeable && Number(it.rate) > 0).forEach((it, i) => {
+      items.push({
+        id: `${Date.now()}_x${i}`,
+        name: it.name || 'Extra',
+        hsn: it.hsn || '', unit: it.unit || 'Nos',
+        quantity: Number(it.qty) || 1,
+        rate: Number(it.rate) || 0,
+        discount: 0, taxPercent: Number(it.taxPercent) || 0, cessPercent: 0,
+      });
+    });
     onCreateInvoiceFromStay({
       clientName: b.guestName || '',
       invoiceType: 'tax-invoice',
@@ -175,7 +194,12 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     if (onOpenReceipts) onOpenReceipts();
   };
 
+  // Collect-back items still outstanding (issued, not yet marked returned).
+  const pendingReturns = (b) => (b.roomItems || []).filter((it) => it.returnable && !it.returned);
+
   const doCheckOutAndBill = async (b) => {
+    const pending = pendingReturns(b);
+    if (pending.length && !window.confirm(`These items are not marked returned yet:\n\n${pending.map((it) => `• ${it.name}${Number(it.qty) > 1 ? ` ×${it.qty}` : ''}`).join('\n')}\n\nCheck out and bill anyway?`)) return;
     if (!(await persistBooking({ ...b, status: 'checked-out', checkedOutAt: new Date().toISOString() }))) return;
     billFromBooking(b);
   };
@@ -260,6 +284,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
               <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'reservation')} title="Cancel reservation"><Trash2 size={13} /></button>
             </>}
             {key === 'occupied' && <>
+              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setItemsModal(booking)} title="Items issued to this room — collect back / chargeable"><Package size={13} /> Items{(booking.roomItems || []).length ? ` (${(booking.roomItems || []).length})` : ''}</button>
               <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutAndBill(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
               <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
               <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'check-in')} title="Cancel this check-in (mistake) — frees the room, no bill"><Trash2 size={13} /></button>
@@ -437,6 +462,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
       {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} editBlock={(blockModal && blockModal.editBlock) || null} addEvent={(blockModal && blockModal.addEvent) || null} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
+      {itemsModal && <RoomItemsModal booking={itemsModal} rooms={rooms} currency={currency} onClose={() => setItemsModal(null)} onSave={(items) => saveRoomItems(itemsModal, items)} />}
       {eventDetail && (() => {
         const days = blocks.filter((b) => eventKey(b) === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
         const evName = days[0]?.eventName || 'Event';
@@ -748,5 +774,116 @@ function EventBilling({ days, receipts, currency, onSaved, onCreateReceipt, onCr
         <button className="btn btn-primary" style={{ flex: 1, fontSize: '0.8rem' }} onClick={() => onCreateInvoice(days, evName, total)}><ReceiptText size={14} /> Create invoice</button>
       </div>
     </div>
+  );
+}
+
+// ---------------- Room items modal ----------------
+// Track what has been issued to an occupied room: amenities to collect back
+// (towel, AC remote…) and chargeable extras (dinner, water, cold drinks…).
+// Chargeable items flow onto the GST invoice at "Checkout & bill".
+const RETURN_PRESETS = ['Towel', 'AC remote', 'TV remote', 'Geyser remote', 'Bedsheet', 'Blanket', 'Pillow', 'Hair dryer', 'Bucket & mug', 'Key / Keycard'];
+const CHARGE_PRESETS = [
+  { name: 'Dinner', tax: 5 }, { name: 'Lunch', tax: 5 }, { name: 'Breakfast', tax: 5 },
+  { name: 'Tea / Coffee', tax: 5 }, { name: 'Water bottle', tax: 18 }, { name: 'Cold drink', tax: 12 },
+  { name: 'Snacks', tax: 12 }, { name: 'Laundry', tax: 18 }, { name: 'Extra bed', tax: 5 },
+];
+const TAX_OPTIONS = [0, 5, 12, 18, 28];
+
+function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
+  const roomNos = (booking.roomIds || []).map((id) => rooms.find((r) => r.id === id)?.number).filter(Boolean).join(', ');
+  const [items, setItems] = useState(() => (booking.roomItems || []).map((it) => ({
+    id: it.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name: it.name || '', qty: Number(it.qty) || 1,
+    returnable: !!it.returnable,
+    chargeable: !!it.chargeable, rate: it.rate ?? '', taxPercent: it.taxPercent ?? 5,
+    returned: !!it.returned, hsn: it.hsn || '', unit: it.unit || 'Nos',
+  })));
+  const [saving, setSaving] = useState(false);
+
+  const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const add = (partial) => setItems((prev) => [...prev, { id: uid(), name: '', qty: 1, returnable: false, chargeable: false, rate: '', taxPercent: 5, returned: false, hsn: '', unit: 'Nos', ...partial }]);
+  const patch = (id, p) => setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...p } : it)));
+  const remove = (id) => setItems((prev) => prev.filter((it) => it.id !== id));
+
+  const chargeTotal = items.filter((it) => it.chargeable).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
+  const pendingReturns = items.filter((it) => it.returnable && !it.returned).length;
+
+  const save = async () => {
+    const clean = items.filter((it) => String(it.name).trim()).map((it) => ({
+      id: it.id, name: String(it.name).trim(), qty: Number(it.qty) || 1,
+      returnable: !!it.returnable, chargeable: !!it.chargeable,
+      rate: it.chargeable ? (Number(it.rate) || 0) : 0,
+      taxPercent: it.chargeable ? (Number(it.taxPercent) || 0) : 0,
+      returned: !!it.returned, hsn: it.hsn || '', unit: it.unit || 'Nos',
+    }));
+    setSaving(true);
+    try { await onSave(clean); } finally { setSaving(false); }
+  };
+
+  const chip = { fontSize: '0.74rem', padding: '0.28rem 0.55rem', borderRadius: 999 };
+  const toggleBtn = { fontSize: '0.72rem', padding: '0.25rem 0.5rem' };
+
+  return (
+    <div className="modal-overlay"><div className="modal-content" style={{ maxWidth: 680, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="section-title" style={{ margin: 0 }}><Package size={18} style={{ verticalAlign: '-3px', marginRight: 6 }} />Room {roomNos || ''} — Items</h3>
+        <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+      </div>
+      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '-0.6rem', marginBottom: '0.8rem' }}>
+        {booking.guestName || 'Guest'} · issued items to collect back or charge on the bill
+      </div>
+
+      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>Quick add — collect back</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+        {RETURN_PRESETS.map((n) => <button key={n} className="btn btn-secondary" style={chip} onClick={() => add({ name: n, returnable: true })}><Plus size={12} /> {n}</button>)}
+      </div>
+      <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>Quick add — chargeable</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+        {CHARGE_PRESETS.map((p) => <button key={p.name} className="btn btn-secondary" style={chip} onClick={() => add({ name: p.name, chargeable: true, taxPercent: p.tax })}><Plus size={12} /> {p.name}</button>)}
+      </div>
+
+      {items.length === 0 ? (
+        <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.84rem', padding: '1.2rem 0' }}>No items yet. Tap a chip above, or add a custom item.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {items.map((it) => (
+            <div key={it.id} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '7px 9px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 7 }}>
+              <input className="form-input" style={{ flex: '1 1 150px', minWidth: 120 }} value={it.name} onChange={(e) => patch(it.id, { name: e.target.value })} placeholder="Item name" />
+              <input type="number" className="form-input" style={{ width: 62 }} value={it.qty} min="1" step="1" onChange={(e) => patch(it.id, { qty: e.target.value })} title="Quantity" />
+              <button className={`btn ${it.returnable ? 'btn-primary' : 'btn-secondary'}`} style={toggleBtn} onClick={() => patch(it.id, { returnable: !it.returnable })} title="Must be collected back at checkout">Collect back</button>
+              <button className={`btn ${it.chargeable ? 'btn-primary' : 'btn-secondary'}`} style={toggleBtn} onClick={() => patch(it.id, { chargeable: !it.chargeable })} title="Add to the bill at checkout">Chargeable</button>
+              {it.chargeable && (<>
+                <input type="number" className="form-input" style={{ width: 92 }} value={it.rate} min="0" step="any" onChange={(e) => patch(it.id, { rate: e.target.value })} placeholder="Rate" title="Rate per unit" />
+                <select className="form-input" style={{ width: 74 }} value={it.taxPercent} onChange={(e) => patch(it.id, { taxPercent: Number(e.target.value) })} title="GST %">
+                  {TAX_OPTIONS.map((t) => <option key={t} value={t}>{t}%</option>)}
+                </select>
+              </>)}
+              {it.returnable && (
+                <button className={`btn ${it.returned ? 'btn-primary' : 'btn-secondary'}`} style={toggleBtn} onClick={() => patch(it.id, { returned: !it.returned })} title="Mark as returned">
+                  <Check size={12} /> {it.returned ? 'Returned' : 'Return?'}
+                </button>
+              )}
+              <button className="icon-btn icon-btn-red" onClick={() => remove(it.id)} title="Remove"><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 10 }}>
+        <button className="btn btn-secondary" style={{ fontSize: '0.78rem' }} onClick={() => add({})}><Plus size={14} /> Custom item</button>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {chargeTotal > 0 && <span>Chargeable: <strong style={{ color: 'var(--text)' }}>{formatCurrency(chargeTotal, currency)}</strong> + GST</span>}
+          {chargeTotal > 0 && pendingReturns > 0 && <span> · </span>}
+          {pendingReturns > 0 && <span>{pendingReturns} to collect back</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div></div>
   );
 }
