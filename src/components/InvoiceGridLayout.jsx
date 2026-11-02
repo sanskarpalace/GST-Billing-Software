@@ -382,6 +382,13 @@ function TallyLayout({ ctx }) {
         <div {...blockProps} style={{ ...cell, borderTop: 'none' }}>Tax Amount (in words) : <strong>{ctx.words(ctx.totalTax)}</strong></div>
       )}
 
+      {/* Court-jurisdiction clause — its own standalone line, NOT a "Terms &
+          Conditions" entry. Sourced from the business profile's Jurisdiction
+          field (Settings → Business Profile). */}
+      {ctx.profile?.jurisdiction && (
+        <div {...blockProps} style={{ ...cell, borderTop: 'none', fontStyle: 'italic' }}>{ctx.profile.jurisdiction}</div>
+      )}
+
       <div style={{ border: B, borderTop: 'none', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
         <div style={{ padding: '4px 6px', borderRight: B }}>
           {ctx.notices}
@@ -544,6 +551,10 @@ function BoxedLayout({ ctx }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, padding: '4px 6px' }}>
           <div>
             {ctx.notices}
+            {/* Jurisdiction clause as a standalone line, not under Terms & Conditions. */}
+            {ctx.profile?.jurisdiction && (
+              <div {...blockProps} style={{ ...small, fontStyle: 'italic', marginBottom: 4 }}>{ctx.profile.jurisdiction}</div>
+            )}
             <RichBlock title="Terms & Conditions:" html={ctx.termsHtml} className={ctx.termsClassMod} />
             <RichBlock title="Notes:" html={ctx.notesHtml} className={ctx.termsClassMod} />
             {ctx.showDeclaration && (

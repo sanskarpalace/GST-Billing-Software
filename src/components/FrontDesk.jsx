@@ -147,7 +147,6 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
         items,
         details: { checkIn: b.checkIn, checkOut: b.checkOut, roomNo: roomNos, guests: b.guests || '', invoiceDate: today },
         invoiceType: 'tax-invoice',
-        customTerms: 'Subject to Garoth (M.P.) jurisdiction only.',
       },
     });
   };
@@ -166,7 +165,6 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
         items: [{ id: `${Date.now()}`, name: `Event — ${evName}`, hsn: '', quantity: 1, unit: 'Event', rate: Number(total) || 0, discount: 0, taxPercent: 5, cessPercent: 0 }],
         details: { checkIn: from, checkOut: to, roomNo: roomNos, guests: '', invoiceDate: today },
         invoiceType: 'tax-invoice',
-        customTerms: 'Subject to Garoth (M.P.) jurisdiction only.',
       },
     });
   };

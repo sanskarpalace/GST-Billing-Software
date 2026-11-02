@@ -1296,6 +1296,14 @@ export default function SettingsView({ onSaved }) {
                 </div>
               )}
 
+              {/* Court-jurisdiction clause — prints as its own standalone line at the
+                  bottom of every invoice (not under Terms & Conditions). */}
+              <div className="form-group" style={{ marginTop: '1rem', maxWidth: '420px' }}>
+                <label className="form-label">Jurisdiction line (printed on invoices)</label>
+                <input type="text" name="jurisdiction" className="form-input" value={profile.jurisdiction || ''} onChange={handleChange} placeholder="e.g. Subject to Garoth (M.P.) jurisdiction only." />
+                <small className="form-hint" style={{ display: 'block', marginTop: 4, color: 'var(--text-muted)' }}>Printed verbatim as a separate line near the signature. Leave blank for none.</small>
+              </div>
+
               {/* Add/Edit modal */}
               {editingAccount && (
                 <div className="modal-overlay" onClick={cancelAccount}>

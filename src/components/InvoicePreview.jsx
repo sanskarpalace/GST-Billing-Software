@@ -1446,6 +1446,13 @@ const InvoicePreview = React.forwardRef(({ profile: profileProp, client, details
               </div>
             ) : null;
           })()}
+          {/* Court-jurisdiction clause — standalone line, not a Terms & Conditions
+              entry. From the business profile's Jurisdiction field. */}
+          {profile?.jurisdiction && (
+            <div className="inv-footer-block">
+              <p className="inv-terms" style={{ margin: 0, fontStyle: 'italic' }}>{profile.jurisdiction}</p>
+            </div>
+          )}
           {/* v1.10.70 (#72) - below Terms & Conditions, as asked. */}
           {showSystemGeneratedNote && (
             <div className="inv-footer-block inv-system-note">

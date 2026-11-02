@@ -1060,11 +1060,11 @@ export default function InvoiceGenerator({ onBack, profile: profileProp, editing
     getAllProfiles().then(p => { setAllProfiles(p); if (!activeProfile && p.length > 0) setActiveProfile(profileProp); }).catch(() => {});
     getTermsTemplates().then(templates => {
       setTermsTemplates(templates);
-      if (blankNewInvoice.current && !selectedTermsId && !customTerms) {
-        // Hotel edition: default to a single jurisdiction line only. The full
-        // Hotel/Hospitality preset is still available from the Terms dropdown.
-        setCustomTerms('Subject to Garoth (M.P.) jurisdiction only.');
-      }
+      // The jurisdiction clause ("Subject to <city> jurisdiction only.") is no
+      // longer forced into Terms & Conditions — a court-jurisdiction clause is
+      // not a T&C. It now prints as its own standalone footer line, sourced from
+      // the business profile's Jurisdiction field (Settings → Business Profile).
+      // Terms & Conditions stays empty unless the user adds real terms.
     });
     getAllClients().then(clients => {
       setSavedClients(clients);
