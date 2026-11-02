@@ -790,7 +790,17 @@ const CHARGE_PRESETS = [
 const TAX_OPTIONS = [0, 5, 12, 18, 28];
 
 function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
-  const roomNos = (booking.roomIds || []).map((id) => rooms.find((r) => r.id === id)?.number).filter(Boolean).join(', ');
+  const roomObjs = (booking.roomIds || []).map((id) => rooms.find((r) => r.id === id)).filter(Boolean);
+  const roomNos = roomObjs.map((r) => r.number).filter(Boolean).join(', ');
+  const roomType = roomObjs.map((r) => r.type).filter(Boolean).join(', ');
+  // Stay summary — what the room was given for and for how long. Mirrors how
+  // billFromBooking computes room charges (per room: nights × rate), so the
+  // figure shown here matches the invoice.
+  const stayNights = nightsBetween(booking.checkIn, booking.checkOut) || 1;
+  const roomCharge = roomObjs.length
+    ? roomObjs.reduce((s, r) => s + stayNights * Number(booking.ratePerNight || r.baseRate || 0), 0)
+    : stayNights * Number(booking.ratePerNight || 0);
+  const perNight = stayNights ? roomCharge / stayNights : 0;
   const [items, setItems] = useState(() => (booking.roomItems || []).map((it) => ({
     id: it.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: it.name || '', qty: Number(it.qty) || 1,
@@ -829,8 +839,25 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
         <h3 className="section-title" style={{ margin: 0 }}><Package size={18} style={{ verticalAlign: '-3px', marginRight: 6 }} />Room {roomNos || ''} — Items</h3>
         <button className="icon-btn" onClick={onClose}><X size={18} /></button>
       </div>
-      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '-0.6rem', marginBottom: '0.8rem' }}>
-        {booking.guestName || 'Guest'} · issued items to collect back or charge on the bill
+      {/* Stay summary — guest, dates, tariff and the room charge so far. */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginTop: '-0.3rem', marginBottom: '0.9rem', background: 'var(--bg-subtle, rgba(0,0,0,0.02))' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+          <strong style={{ fontSize: '0.95rem' }}>{booking.guestName || 'Guest'}</strong>
+          {booking.guestPhone && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>📞 {booking.guestPhone}</span>}
+        </div>
+        {(booking.companyName || booking.guestGstin) && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
+            {booking.companyName || ''}{booking.companyName && booking.guestGstin ? ' · ' : ''}{booking.guestGstin ? `GSTIN ${booking.guestGstin}` : ''}
+          </div>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px 14px', marginTop: 8, fontSize: '0.8rem' }}>
+          <div><span style={{ color: 'var(--text-muted)' }}>Room</span><br /><strong>{roomNos || '—'}{roomType ? ` · ${roomType}` : ''}</strong></div>
+          <div><span style={{ color: 'var(--text-muted)' }}>Stay</span><br /><strong>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}</div>
+          <div><span style={{ color: 'var(--text-muted)' }}>Tariff</span><br /><strong>{formatCurrency(perNight, currency)}</strong>/night{roomObjs.length > 1 ? ` · ${roomObjs.length} rooms` : ''}</div>
+          <div><span style={{ color: 'var(--text-muted)' }}>Room charge</span><br /><strong>{formatCurrency(roomCharge, currency)}</strong></div>
+        </div>
+        {booking.guests && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6 }}>Guests: {booking.guests}</div>}
+        {booking.notes && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>Note: {booking.notes}</div>}
       </div>
 
       <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>Quick add — collect back</div>
@@ -875,9 +902,9 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {chargeTotal > 0 && <span>Chargeable: <strong style={{ color: 'var(--text)' }}>{formatCurrency(chargeTotal, currency)}</strong> + GST</span>}
-          {chargeTotal > 0 && pendingReturns > 0 && <span> · </span>}
-          {pendingReturns > 0 && <span>{pendingReturns} to collect back</span>}
+          <span>Est. bill: <strong style={{ color: 'var(--text)' }}>{formatCurrency(roomCharge + chargeTotal, currency)}</strong> + GST</span>
+          <span style={{ color: 'var(--text-muted)' }}> (room {formatCurrency(roomCharge, currency)}{chargeTotal > 0 ? ` + extras ${formatCurrency(chargeTotal, currency)}` : ''})</span>
+          {pendingReturns > 0 && <span> · {pendingReturns} to collect back</span>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
