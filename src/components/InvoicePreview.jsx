@@ -1466,7 +1466,7 @@ const InvoicePreview = React.forwardRef(({ profile: profileProp, client, details
               entry. From the business profile's Jurisdiction field. */}
           {profile?.jurisdiction && (
             <div className="inv-footer-block">
-              <p className="inv-terms" style={{ margin: 0, fontStyle: 'italic' }}>{profile.jurisdiction}</p>
+              <p className="inv-terms" style={{ margin: 0, fontStyle: 'italic', textAlign: 'center' }}>{profile.jurisdiction}</p>
             </div>
           )}
           {/* v1.10.70 (#72) - below Terms & Conditions, as asked. */}

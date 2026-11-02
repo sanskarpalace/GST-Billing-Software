@@ -382,13 +382,6 @@ function TallyLayout({ ctx }) {
         <div {...blockProps} style={{ ...cell, borderTop: 'none' }}>Tax Amount (in words) : <strong>{ctx.words(ctx.totalTax)}</strong></div>
       )}
 
-      {/* Court-jurisdiction clause — its own standalone line, NOT a "Terms &
-          Conditions" entry. Sourced from the business profile's Jurisdiction
-          field (Settings → Business Profile). */}
-      {ctx.profile?.jurisdiction && (
-        <div {...blockProps} style={{ ...cell, borderTop: 'none', fontStyle: 'italic' }}>{ctx.profile.jurisdiction}</div>
-      )}
-
       <div style={{ border: B, borderTop: 'none', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
         <div style={{ padding: '4px 6px', borderRight: B }}>
           {ctx.notices}
@@ -411,6 +404,12 @@ function TallyLayout({ ctx }) {
         ) : <div style={{ borderTop: B, borderRight: B }} />}
         <div style={{ padding: '4px 6px', borderTop: B }}><Signature ctx={ctx} /></div>
       </div>
+      {/* Court-jurisdiction clause — a centered standalone line at the foot of
+          the bill (matching the legacy template), NOT a Terms & Conditions
+          entry. Sourced from the business profile's Jurisdiction field. */}
+      {ctx.profile?.jurisdiction && (
+        <div {...blockProps} style={{ textAlign: 'center', marginTop: 4, fontStyle: 'italic', ...small }}>{ctx.profile.jurisdiction}</div>
+      )}
       <div {...blockProps} style={{ textAlign: 'center', marginTop: 4, ...small }}>
         {ctx.showSystemGeneratedNote ? 'This is a computer generated invoice. No signature or stamp is required.' : 'This is a Computer Generated Invoice'}
       </div>
@@ -551,10 +550,6 @@ function BoxedLayout({ ctx }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, padding: '4px 6px' }}>
           <div>
             {ctx.notices}
-            {/* Jurisdiction clause as a standalone line, not under Terms & Conditions. */}
-            {ctx.profile?.jurisdiction && (
-              <div {...blockProps} style={{ ...small, fontStyle: 'italic', marginBottom: 4 }}>{ctx.profile.jurisdiction}</div>
-            )}
             <RichBlock title="Terms & Conditions:" html={ctx.termsHtml} className={ctx.termsClassMod} />
             <RichBlock title="Notes:" html={ctx.notesHtml} className={ctx.termsClassMod} />
             {ctx.showDeclaration && (
@@ -566,6 +561,11 @@ function BoxedLayout({ ctx }) {
           </div>
           <div style={{ minWidth: 190 }}><Signature ctx={ctx} /></div>
         </div>
+        {/* Court-jurisdiction clause — centered standalone line at the foot of
+            the bill, NOT a Terms & Conditions entry. From the Jurisdiction field. */}
+        {ctx.profile?.jurisdiction && (
+          <div {...blockProps} style={{ textAlign: 'center', borderTop: B, padding: '3px 6px', ...small, fontStyle: 'italic' }}>{ctx.profile.jurisdiction}</div>
+        )}
         <div {...blockProps} style={{ textAlign: 'center', borderTop: B, padding: '3px 6px', ...small, fontStyle: 'italic' }}>
           {ctx.showSystemGeneratedNote ? 'This is a computer generated document. No signature or stamp is required.' : 'This is a computer generated document.'}
         </div>
