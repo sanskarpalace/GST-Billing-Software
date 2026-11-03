@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, ReceiptText, Package, Check } from 'lucide-react';
+import { BedDouble, Plus, LogIn, LogOut, Trash2, X, Pencil, CalendarDays, ReceiptText, Package, Check, CalendarPlus } from 'lucide-react';
 import { toast } from './Toast';
 import HelpButton from './HelpButton';
 import { getAllRooms, saveRoom, deleteRoom, getAllBookings, saveBooking, deleteBooking, getAllClients, saveClient, getAllReceipts } from '../store';
@@ -74,6 +74,8 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   const [blockFilter, setBlockFilter] = useState('all'); // all | upcoming | past
   const [eventDetail, setEventDetail] = useState(null);   // selected event name
   const [itemsModal, setItemsModal] = useState(null);     // booking whose room-items are being edited
+  const [checkoutModal, setCheckoutModal] = useState(null); // booking being checked out (actual-nights dialog)
+  const [extendModal, setExtendModal] = useState(null);   // booking whose stay is being extended
 
   const currency = profile?.currency || 'INR';
   const today = localToday();
@@ -194,14 +196,27 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     if (onOpenReceipts) onOpenReceipts();
   };
 
-  // Collect-back items still outstanding (issued, not yet marked returned).
-  const pendingReturns = (b) => (b.roomItems || []).filter((it) => it.returnable && !it.returned);
+  // Checkout dialog confirms the ACTUAL check-out date (which may differ from
+  // the booked one — early departure or a late/extended stay), writes it onto
+  // the booking so the invoice bills real nights (min 1), then bills.
+  const confirmCheckout = async (b, actualCheckOut) => {
+    const updated = { ...b, checkOut: actualCheckOut, status: 'checked-out', checkedOutAt: new Date().toISOString() };
+    if (!(await persistBooking(updated))) return;
+    setCheckoutModal(null);
+    billFromBooking(updated);
+  };
 
-  const doCheckOutAndBill = async (b) => {
-    const pending = pendingReturns(b);
-    if (pending.length && !window.confirm(`These items are not marked returned yet:\n\n${pending.map((it) => `• ${it.name}${Number(it.qty) > 1 ? ` ×${it.qty}` : ''}`).join('\n')}\n\nCheck out and bill anyway?`)) return;
-    if (!(await persistBooking({ ...b, status: 'checked-out', checkedOutAt: new Date().toISOString() }))) return;
-    billFromBooking(b);
+  // Extend an in-house guest's stay by pushing the check-out date later. Saved
+  // without force so the server still blocks a clash with another booking.
+  const confirmExtend = async (b, newCheckOut) => {
+    try {
+      await saveBooking({ ...b, checkOut: newCheckOut });
+      await load();
+      setExtendModal(null);
+      toast('Stay extended', 'success');
+    } catch {
+      toast('Could not extend — the room is booked for those dates', 'error');
+    }
   };
 
   const doCheckOutOnly = async (b) => { if (await persistBooking({ ...b, status: 'checked-out', checkedOutAt: new Date().toISOString() })) toast('Checked out', 'success'); };
@@ -285,7 +300,8 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
             </>}
             {key === 'occupied' && <>
               <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setItemsModal(booking)} title="Items issued to this room — collect back / chargeable"><Package size={13} /> Items{(booking.roomItems || []).length ? ` (${(booking.roomItems || []).length})` : ''}</button>
-              <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckOutAndBill(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
+              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setExtendModal(booking)} title="Extend this stay — push the check-out date later"><CalendarPlus size={13} /> Extend</button>
+              <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setCheckoutModal(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
               <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
               <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'check-in')} title="Cancel this check-in (mistake) — frees the room, no bill"><Trash2 size={13} /></button>
             </>}
@@ -463,6 +479,8 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
       {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} editBlock={(blockModal && blockModal.editBlock) || null} addEvent={(blockModal && blockModal.addEvent) || null} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
       {itemsModal && <RoomItemsModal booking={itemsModal} rooms={rooms} currency={currency} onClose={() => setItemsModal(null)} onSave={(items) => saveRoomItems(itemsModal, items)} />}
+      {checkoutModal && <CheckoutModal booking={checkoutModal} rooms={rooms} currency={currency} onCancel={() => setCheckoutModal(null)} onConfirm={(date) => confirmCheckout(checkoutModal, date)} />}
+      {extendModal && <ExtendModal booking={extendModal} rooms={rooms} currency={currency} onCancel={() => setExtendModal(null)} onConfirm={(date) => confirmExtend(extendModal, date)} />}
       {eventDetail && (() => {
         const days = blocks.filter((b) => eventKey(b) === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
         const evName = days[0]?.eventName || 'Event';
@@ -921,6 +939,107 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
+      </div>
+    </div></div>
+  );
+}
+
+// Room charge + extras + GST figures for a stay, for a given number of nights.
+// Mirrors billFromBooking (per room: nights × rate; rooms billed at 5% GST).
+function stayFigures(booking, rooms, nights) {
+  const roomObjs = (booking.roomIds || []).map((id) => rooms.find((r) => r.id === id)).filter(Boolean);
+  const roomCharge = roomObjs.length
+    ? roomObjs.reduce((s, r) => s + nights * Number(booking.ratePerNight || r.baseRate || 0), 0)
+    : nights * Number(booking.ratePerNight || 0);
+  const extras = (booking.roomItems || []).filter((it) => it.chargeable && Number(it.rate) > 0);
+  const chargeTotal = extras.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
+  const estGst = roomCharge * 0.05 + extras.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0) * (Number(it.taxPercent) || 0) / 100, 0);
+  const advance = Number(booking.advance) || 0;
+  const estTotal = roomCharge + chargeTotal + estGst;
+  return { roomObjs, roomCharge, extras, chargeTotal, estGst, advance, estTotal, balance: estTotal - advance };
+}
+
+// ---------------- Checkout dialog ----------------
+// Confirms the ACTUAL check-out date (early departure or extended stay) and bills
+// real nights (minimum 1). The invoice uses this date, not the booked one.
+function CheckoutModal({ booking, rooms, currency, onCancel, onConfirm }) {
+  const bookedNights = nightsBetween(booking.checkIn, booking.checkOut) || 1;
+  const today = localToday();
+  const [coDate, setCoDate] = useState(today < booking.checkIn ? booking.checkIn : today);
+  const [saving, setSaving] = useState(false);
+  const nights = Math.max(1, nightsBetween(booking.checkIn, coDate));
+  const fig = stayFigures(booking, rooms, nights);
+  const roomNos = fig.roomObjs.map((r) => r.number).filter(Boolean).join(', ');
+  const pending = (booking.roomItems || []).filter((it) => it.returnable && !it.returned);
+  const diff = nights - bookedNights;
+  const line = { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: '0.85rem', padding: '2px 0' };
+  const go = async () => { setSaving(true); try { await onConfirm(coDate); } finally { setSaving(false); } };
+  return (
+    <div className="modal-overlay"><div className="modal-content" style={{ maxWidth: 480 }}>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="section-title" style={{ margin: 0 }}><ReceiptText size={18} style={{ verticalAlign: '-3px', marginRight: 6 }} />Checkout — Room {roomNos}</h3>
+        <button className="icon-btn" onClick={onCancel}><X size={18} /></button>
+      </div>
+      <div style={{ fontSize: '0.85rem', marginBottom: 10 }}><strong>{booking.guestName || 'Guest'}</strong> · booked {fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)} ({bookedNights} night{bookedNights > 1 ? 's' : ''})</div>
+      <div className="form-group" style={{ marginBottom: 10 }}>
+        <label className="form-label">Actual check-out date</label>
+        <input type="date" className="form-input" value={coDate} min={booking.checkIn} onChange={(e) => setCoDate(e.target.value)} />
+        <small className="form-hint" style={{ display: 'block', marginTop: 4, color: diff === 0 ? 'var(--text-muted)' : (diff < 0 ? '#dc2626' : '#b45309') }}>
+          Billing {nights} night{nights > 1 ? 's' : ''}{diff < 0 ? ` — early checkout (${-diff} fewer than booked)` : diff > 0 ? ` — ${diff} night${diff > 1 ? 's' : ''} more than booked` : ' — as booked'}
+        </small>
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+        <div style={line}><span>Room charge ({nights} × tariff)</span><strong>{formatCurrency(fig.roomCharge, currency)}</strong></div>
+        {fig.chargeTotal > 0 && <div style={line}><span>Extras ({fig.extras.length})</span><strong>{formatCurrency(fig.chargeTotal, currency)}</strong></div>}
+        <div style={line}><span>GST (est.)</span><span>{formatCurrency(fig.estGst, currency)}</span></div>
+        <div style={{ ...line, borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 6 }}><span style={{ fontWeight: 700 }}>Total (incl. GST)</span><strong>{formatCurrency(fig.estTotal, currency)}</strong></div>
+        {fig.advance > 0 && <div style={line}><span>Advance paid</span><span style={{ color: '#059669' }}>− {formatCurrency(fig.advance, currency)}</span></div>}
+        <div style={{ ...line, fontSize: '0.95rem' }}><span style={{ fontWeight: 700 }}>Balance due</span><strong style={{ color: fig.balance > 0 ? '#dc2626' : '#059669' }}>{formatCurrency(fig.balance, currency)}</strong></div>
+      </div>
+      {pending.length > 0 && (
+        <div style={{ marginTop: 10, border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.08)', borderRadius: 8, padding: '7px 10px', fontSize: '0.8rem' }}>
+          ⚠ Not collected back yet: {pending.map((it) => `${it.name}${Number(it.qty) > 1 ? ` ×${it.qty}` : ''}`).join(', ')}
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+        <button className="btn btn-secondary" onClick={onCancel} disabled={saving}>Cancel</button>
+        <button className="btn btn-primary" onClick={go} disabled={saving}>{saving ? 'Billing…' : 'Checkout & bill'}</button>
+      </div>
+    </div></div>
+  );
+}
+
+// ---------------- Extend stay dialog ----------------
+// Pushes the check-out date later for an in-house guest. The save is validated
+// server-side, so a clash with another booking is rejected.
+function ExtendModal({ booking, rooms, currency, onCancel, onConfirm }) {
+  const [newOut, setNewOut] = useState(isoAddDays(booking.checkOut, 1));
+  const [saving, setSaving] = useState(false);
+  const addedNights = Math.max(0, nightsBetween(booking.checkOut, newOut));
+  const roomObjs = (booking.roomIds || []).map((id) => rooms.find((r) => r.id === id)).filter(Boolean);
+  const perNight = roomObjs.reduce((s, r) => s + Number(booking.ratePerNight || r.baseRate || 0), 0) || Number(booking.ratePerNight || 0);
+  const addedCharge = addedNights * perNight;
+  const roomNos = roomObjs.map((r) => r.number).filter(Boolean).join(', ');
+  const valid = newOut > booking.checkOut;
+  const go = async () => { if (!valid) return; setSaving(true); try { await onConfirm(newOut); } finally { setSaving(false); } };
+  return (
+    <div className="modal-overlay"><div className="modal-content" style={{ maxWidth: 440 }}>
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="section-title" style={{ margin: 0 }}><CalendarPlus size={18} style={{ verticalAlign: '-3px', marginRight: 6 }} />Extend stay — Room {roomNos}</h3>
+        <button className="icon-btn" onClick={onCancel}><X size={18} /></button>
+      </div>
+      <div style={{ fontSize: '0.85rem', marginBottom: 10 }}><strong>{booking.guestName || 'Guest'}</strong> · currently until {fmtDate(booking.checkOut)}</div>
+      <div className="form-group">
+        <label className="form-label">New check-out date</label>
+        <input type="date" className="form-input" value={newOut} min={isoAddDays(booking.checkOut, 1)} onChange={(e) => setNewOut(e.target.value)} />
+        <small className="form-hint" style={{ display: 'block', marginTop: 4, color: valid ? '#b45309' : '#dc2626' }}>
+          {valid ? `+${addedNights} night${addedNights > 1 ? 's' : ''} · about ${formatCurrency(addedCharge, currency)} more (before GST)` : 'Pick a date after the current check-out.'}
+        </small>
+      </div>
+      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6 }}>The extra night(s) are billed automatically at checkout.</div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+        <button className="btn btn-secondary" onClick={onCancel} disabled={saving}>Cancel</button>
+        <button className="btn btn-primary" onClick={go} disabled={saving || !valid}>{saving ? 'Saving…' : 'Extend'}</button>
       </div>
     </div></div>
   );
