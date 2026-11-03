@@ -801,6 +801,7 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
     ? roomObjs.reduce((s, r) => s + stayNights * Number(booking.ratePerNight || r.baseRate || 0), 0)
     : stayNights * Number(booking.ratePerNight || 0);
   const perNight = stayNights ? roomCharge / stayNights : 0;
+  const advancePaid = Number(booking.advance) || 0;
   const [items, setItems] = useState(() => (booking.roomItems || []).map((it) => ({
     id: it.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: it.name || '', qty: Number(it.qty) || 1,
@@ -817,6 +818,11 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
 
   const chargeTotal = items.filter((it) => it.chargeable).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
   const pendingReturns = items.filter((it) => it.returnable && !it.returned).length;
+  // Estimated GST — room charges bill at 5% (as billFromBooking does); each
+  // chargeable extra uses its own rate. Balance = est. total − advance paid.
+  const estGst = roomCharge * 0.05 + items.filter((it) => it.chargeable).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0) * (Number(it.taxPercent) || 0) / 100, 0);
+  const estTotal = roomCharge + chargeTotal + estGst;
+  const balanceDue = estTotal - advancePaid;
 
   const save = async () => {
     const clean = items.filter((it) => String(it.name).trim()).map((it) => ({
@@ -855,6 +861,7 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
           <div><span style={{ color: 'var(--text-muted)' }}>Stay</span><br /><strong>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}</div>
           <div><span style={{ color: 'var(--text-muted)' }}>Tariff</span><br /><strong>{formatCurrency(perNight, currency)}</strong>/night{roomObjs.length > 1 ? ` · ${roomObjs.length} rooms` : ''}</div>
           <div><span style={{ color: 'var(--text-muted)' }}>Room charge</span><br /><strong>{formatCurrency(roomCharge, currency)}</strong></div>
+          <div><span style={{ color: 'var(--text-muted)' }}>Advance paid</span><br /><strong style={{ color: advancePaid > 0 ? '#059669' : 'inherit' }}>{formatCurrency(advancePaid, currency)}</strong></div>
         </div>
         {booking.guests && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6 }}>Guests: {booking.guests}</div>}
         {booking.notes && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>Note: {booking.notes}</div>}
@@ -902,9 +909,13 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          <span>Est. bill: <strong style={{ color: 'var(--text)' }}>{formatCurrency(roomCharge + chargeTotal, currency)}</strong> + GST</span>
-          <span style={{ color: 'var(--text-muted)' }}> (room {formatCurrency(roomCharge, currency)}{chargeTotal > 0 ? ` + extras ${formatCurrency(chargeTotal, currency)}` : ''})</span>
-          {pendingReturns > 0 && <span> · {pendingReturns} to collect back</span>}
+          <div>Est. total (incl. GST): <strong style={{ color: 'var(--text)' }}>{formatCurrency(estTotal, currency)}</strong>
+            <span style={{ color: 'var(--text-muted)' }}> (room {formatCurrency(roomCharge, currency)}{chargeTotal > 0 ? ` + extras ${formatCurrency(chargeTotal, currency)}` : ''} + GST {formatCurrency(estGst, currency)})</span>
+          </div>
+          {advancePaid > 0 && (
+            <div style={{ marginTop: 2 }}>Advance {formatCurrency(advancePaid, currency)} · <strong style={{ color: balanceDue > 0 ? '#dc2626' : '#059669' }}>Balance {formatCurrency(balanceDue, currency)}</strong></div>
+          )}
+          {pendingReturns > 0 && <div style={{ marginTop: 2 }}>{pendingReturns} item{pendingReturns > 1 ? 's' : ''} to collect back</div>}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary" onClick={onClose} disabled={saving}>Cancel</button>
