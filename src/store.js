@@ -30,9 +30,15 @@ async function apiFetch(url, options = {}) {
 // the database. We (a) dedupe concurrent fetches by sharing one in-flight
 // promise and (b) serve the result for a short TTL, then bust the entry the
 // moment that collection is written, so a stale read never outlives a save.
-// Only applied to bills/clients/products (fetched redundantly on load and not
-// latency-critical); bookings stay uncached so Front Desk availability is live.
-const READ_CACHE_TTL_MS = 5000;
+// Applied to bills/clients/products/receipts/profiles/expenses/purchases/
+// recurring (read-heavy, fetched redundantly across screens, not availability-
+// critical); bookings and rooms stay uncached so Front Desk availability is
+// always live. A write to a collection busts its entry immediately, and the
+// cache is cleared when the tab regains focus (below) so returning to the app —
+// e.g. a manager glancing at daily operations — sees fresh data. The 60s TTL
+// keeps network transfer low (repeat screen loads within a minute reuse the
+// result) while bounding cross-device staleness to at most a minute.
+const READ_CACHE_TTL_MS = 60000;
 const _readCache = new Map(); // key -> { ts, data, promise }
 
 function cachedGet(key, fetcher) {
@@ -51,6 +57,15 @@ function cachedGet(key, fetcher) {
 export function invalidateCache(...keys) {
   if (!keys.length) { _readCache.clear(); return; }
   keys.forEach((k) => _readCache.delete(k));
+}
+
+// Fresh-on-return: when the tab becomes visible again (a viewer comes back to
+// the app), drop cached reads so the next screen load fetches current data.
+// Cheap — it only forces a refetch when someone actually returns and navigates.
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') invalidateCache();
+  });
 }
 
 // ---- PIN lock (v1.10.77, #84; checked by the server, see AppLock.jsx) ----
@@ -283,7 +298,9 @@ export const purgeTrashedBill = async (id) => apiFetch(`${API}/trash/${encodeURI
 
 // ---- Profile ----
 export const saveProfile = async (profile) => {
-  return apiFetch(`${API}/profile`, { method: 'POST', body: JSON.stringify(profile) });
+  const r = await apiFetch(`${API}/profile`, { method: 'POST', body: JSON.stringify(profile) });
+  invalidateCache('profiles'); // keep the business-profiles list in sync
+  return r;
 };
 
 export const getProfile = async () => {
@@ -385,64 +402,68 @@ export const deleteProduct = async (id) => {
 };
 
 // ---- Expenses ----
-export const getAllExpenses = async () => {
-  return apiFetch(`${API}/expenses`);
-};
+export const getAllExpenses = () => cachedGet('expenses', () => apiFetch(`${API}/expenses`));
 
 export const saveExpense = async (expense) => {
   const res = await apiFetch(`${API}/expenses`, { method: 'POST', body: JSON.stringify(expense) });
   if (res.id) expense.id = res.id;
+  invalidateCache('expenses');
   return expense;
 };
 
 export const deleteExpense = async (id) => {
-  return apiFetch(`${API}/expenses/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const r = await apiFetch(`${API}/expenses/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('expenses');
+  return r;
 };
 
 // ---- Purchases (Purchase Bills for ITC) ----
-export const getAllPurchases = async () => {
-  return apiFetch(`${API}/purchases`);
-};
+export const getAllPurchases = () => cachedGet('purchases', () => apiFetch(`${API}/purchases`));
 
 export const savePurchase = async (purchase) => {
   const res = await apiFetch(`${API}/purchases`, { method: 'POST', body: JSON.stringify(purchase) });
   if (res.id) purchase.id = res.id;
+  invalidateCache('purchases');
   return purchase;
 };
 
 export const deletePurchase = async (id) => {
-  return apiFetch(`${API}/purchases/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const r = await apiFetch(`${API}/purchases/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('purchases');
+  return r;
 };
 
 // ---- Recurring Invoices ----
-export const getAllRecurring = async () => {
-  return apiFetch(`${API}/recurring`);
-};
+export const getAllRecurring = () => cachedGet('recurring', () => apiFetch(`${API}/recurring`));
 
 export const saveRecurring = async (item) => {
   const res = await apiFetch(`${API}/recurring`, { method: 'POST', body: JSON.stringify(item) });
   if (res.id) item.id = res.id;
+  invalidateCache('recurring');
   return item;
 };
 
 // "Generate Now": the server makes the invoice with the same code as the daily
 // auto-fire, so both give identical invoices. Resolves to { invoiceNumber }.
 export const generateRecurringNow = async (id) => {
-  return apiFetch(`${API}/recurring/${encodeURIComponent(id)}/generate`, { method: 'POST', body: JSON.stringify({}) });
+  const r = await apiFetch(`${API}/recurring/${encodeURIComponent(id)}/generate`, { method: 'POST', body: JSON.stringify({}) });
+  invalidateCache('recurring', 'bills'); // it also creates a new invoice
+  return r;
 };
 
 export const deleteRecurring = async (id) => {
-  return apiFetch(`${API}/recurring/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const r = await apiFetch(`${API}/recurring/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('recurring');
+  return r;
 };
 
 // ---- Receipts / Payment Vouchers ----
-export const getAllReceipts = async () => {
-  return apiFetch(`${API}/receipts`);
-};
+export const getAllReceipts = () => cachedGet('receipts', () => apiFetch(`${API}/receipts`));
 
 export const saveReceipt = async (receipt) => {
   const res = await apiFetch(`${API}/receipts`, { method: 'POST', body: JSON.stringify(receipt) });
   if (res.id) receipt.id = res.id;
+  invalidateCache('receipts');
   return receipt;
 };
 
@@ -459,22 +480,25 @@ export const trashSavedPdf = (bill) => apiFetch(`${API}/trash-pdf`, {
 });
 
 export const deleteReceipt = async (id) => {
-  return apiFetch(`${API}/receipts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const r = await apiFetch(`${API}/receipts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('receipts');
+  return r;
 };
 
 // ---- Business Profiles (multi-business) ----
-export const getAllProfiles = async () => {
-  return apiFetch(`${API}/profiles`);
-};
+export const getAllProfiles = () => cachedGet('profiles', () => apiFetch(`${API}/profiles`));
 
 export const saveBusinessProfile = async (profile) => {
   const res = await apiFetch(`${API}/profiles`, { method: 'POST', body: JSON.stringify(profile) });
   if (res.id) profile.id = res.id;
+  invalidateCache('profiles');
   return profile;
 };
 
 export const deleteBusinessProfile = async (id) => {
-  return apiFetch(`${API}/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const r = await apiFetch(`${API}/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  invalidateCache('profiles');
+  return r;
 };
 
 // ---- Export / Import ----
