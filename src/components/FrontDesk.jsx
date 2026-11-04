@@ -76,6 +76,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   const [itemsModal, setItemsModal] = useState(null);     // booking whose room-items are being edited
   const [checkoutModal, setCheckoutModal] = useState(null); // booking being checked out (actual-nights dialog)
   const [extendModal, setExtendModal] = useState(null);   // booking whose stay is being extended
+  const [stayDetail, setStayDetail] = useState(null);     // past stay whose details are being viewed (History)
 
   const currency = profile?.currency || 'INR';
   const today = localToday();
@@ -438,7 +439,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
           ) : (
             <div className="table-scroll"><table className="data-table"><thead><tr><th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Status</th><th className="col-center">Bill</th></tr></thead>
               <tbody>{history.map((b) => (
-                <tr key={b.id}>
+                <tr key={b.id} onClick={() => setStayDetail(b)} style={{ cursor: 'pointer' }} title="View stay details">
                   <td className="font-medium">{b.guestName || '—'}{b.guestPhone ? <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{b.guestPhone}</div> : null}</td>
                   <td>{(b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</td>
                   <td>{fmtDate(b.checkIn)}</td>
@@ -446,7 +447,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                   <td>{nightsBetween(b.checkIn, b.checkOut)}</td>
                   <td><span style={{ fontWeight: 600, fontSize: '0.8rem', color: b.status === 'cancelled' ? 'var(--text-muted)' : STATUS.occupied.color }}>{b.status === 'cancelled' ? 'Cancelled' : 'Checked out'}</span></td>
                   <td style={{ textAlign: 'center' }}>{b.status === 'checked-out' && (
-                    <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => billFromBooking(b)} title="Generate the GST invoice for this stay"><ReceiptText size={13} /> Bill</button>
+                    <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={(e) => { e.stopPropagation(); billFromBooking(b); }} title="Generate the GST invoice for this stay"><ReceiptText size={13} /> Bill</button>
                   )}</td>
                 </tr>
               ))}</tbody></table></div>
@@ -482,6 +483,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
       {itemsModal && <RoomItemsModal booking={itemsModal} rooms={rooms} currency={currency} onClose={() => setItemsModal(null)} onSave={(items, roomTax) => saveRoomItems(itemsModal, items, roomTax)} />}
       {checkoutModal && <CheckoutModal booking={checkoutModal} rooms={rooms} currency={currency} onCancel={() => setCheckoutModal(null)} onConfirm={(date) => confirmCheckout(checkoutModal, date)} />}
       {extendModal && <ExtendModal booking={extendModal} rooms={rooms} currency={currency} onCancel={() => setExtendModal(null)} onConfirm={(date) => confirmExtend(extendModal, date)} />}
+      {stayDetail && <StayDetailModal booking={stayDetail} rooms={rooms} currency={currency} onClose={() => setStayDetail(null)} onBill={(b) => { billFromBooking(b); setStayDetail(null); }} />}
       {eventDetail && (() => {
         const days = blocks.filter((b) => eventKey(b) === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
         const evName = days[0]?.eventName || 'Event';
@@ -950,7 +952,8 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
 }
 
 // Room charge + extras + GST figures for a stay, for a given number of nights.
-// Mirrors billFromBooking (per room: nights × rate; rooms billed at 5% GST).
+// Mirrors billFromBooking (per room: nights × rate; rooms billed at the
+// booking's chosen room GST %, default 0).
 function stayFigures(booking, rooms, nights) {
   const roomObjs = (booking.roomIds || []).map((id) => rooms.find((r) => r.id === id)).filter(Boolean);
   const roomCharge = roomObjs.length
@@ -963,6 +966,97 @@ function stayFigures(booking, rooms, nights) {
   const advance = Number(booking.advance) || 0;
   const estTotal = roomCharge + chargeTotal + estGst;
   return { roomObjs, roomCharge, extras, chargeTotal, estGst, advance, estTotal, balance: estTotal - advance };
+}
+
+// ---------------- Stay details (read-only) ----------------
+// Opened by clicking a row in History — the full picture of a past stay:
+// guest, room, dates, tariff, room GST, advance, items issued, and the bill
+// breakdown. Checked-out stays can be re-billed straight from here.
+function StayDetailModal({ booking: b, rooms, currency, onClose, onBill }) {
+  const nights = nightsBetween(b.checkIn, b.checkOut) || 1;
+  const fig = stayFigures(b, rooms, nights);
+  const roomNos = fig.roomObjs.map((r) => r.number).filter(Boolean).join(', ');
+  const roomType = fig.roomObjs.map((r) => r.type).filter(Boolean).join(', ');
+  const perNight = nights ? fig.roomCharge / nights : 0;
+  const roomTax = Number(b.roomTaxPercent) || 0;
+  const returnItems = (b.roomItems || []).filter((it) => it.returnable);
+  const cancelled = b.status === 'cancelled';
+  const row = { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: '0.85rem', padding: '2px 0' };
+  const muted = { color: 'var(--text-muted)' };
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="section-title" style={{ margin: 0 }}><ReceiptText size={18} style={{ verticalAlign: '-3px', marginRight: 6 }} />{b.guestName || 'Guest'} — Stay details</h3>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+
+        {/* Guest + stay summary */}
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: '0.9rem', background: 'var(--bg-subtle, rgba(0,0,0,0.02))' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: '0.95rem' }}>{b.guestName || 'Guest'}</strong>
+            <span style={{ fontWeight: 600, fontSize: '0.8rem', color: cancelled ? 'var(--text-muted)' : STATUS.occupied.color }}>{cancelled ? 'Cancelled' : 'Checked out'}</span>
+          </div>
+          {b.guestPhone && <div style={{ fontSize: '0.8rem', ...muted, marginTop: 2 }}>📞 {b.guestPhone}</div>}
+          {(b.companyName || b.guestGstin) && (
+            <div style={{ fontSize: '0.78rem', ...muted, marginTop: 2 }}>
+              {b.companyName || ''}{b.companyName && b.guestGstin ? ' · ' : ''}{b.guestGstin ? `GSTIN ${b.guestGstin}` : ''}
+            </div>
+          )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '6px 14px', marginTop: 8, fontSize: '0.8rem' }}>
+            <div><span style={muted}>Room</span><br /><strong>{roomNos || '—'}{roomType ? ` · ${roomType}` : ''}</strong></div>
+            <div><span style={muted}>Stay</span><br /><strong>{fmtDate(b.checkIn)} → {fmtDate(b.checkOut)}</strong> · {nights} night{nights > 1 ? 's' : ''}</div>
+            <div><span style={muted}>Tariff</span><br /><strong>{formatCurrency(perNight, currency)}</strong>/night{fig.roomObjs.length > 1 ? ` · ${fig.roomObjs.length} rooms` : ''}</div>
+            <div><span style={muted}>Advance paid</span><br /><strong style={{ color: fig.advance > 0 ? '#059669' : 'inherit' }}>{formatCurrency(fig.advance, currency)}</strong></div>
+          </div>
+          {b.guests && <div style={{ fontSize: '0.78rem', ...muted, marginTop: 6 }}>Guests: {b.guests}</div>}
+          {b.notes && <div style={{ fontSize: '0.78rem', ...muted, marginTop: 2 }}>Note: {b.notes}</div>}
+        </div>
+
+        {/* Chargeable extras issued to the room */}
+        {fig.extras.length > 0 && (
+          <div style={{ marginBottom: '0.9rem' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, ...muted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>Chargeable extras</div>
+            {fig.extras.map((it, i) => (
+              <div key={it.id || i} style={row}>
+                <span>{it.name} <span style={muted}>× {Number(it.qty) || 1}{Number(it.taxPercent) ? ` · ${it.taxPercent}% GST` : ''}</span></span>
+                <strong>{formatCurrency((Number(it.qty) || 0) * (Number(it.rate) || 0), currency)}</strong>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Collect-back amenities and whether they came back */}
+        {returnItems.length > 0 && (
+          <div style={{ marginBottom: '0.9rem' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 700, ...muted, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>Collect back</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {returnItems.map((it, i) => (
+                <span key={it.id || i} style={{ fontSize: '0.78rem', padding: '0.2rem 0.5rem', borderRadius: 999, border: '1px solid var(--border)', color: it.returned ? '#059669' : '#dc2626' }}>
+                  {it.returned ? '✓' : '•'} {it.name}{Number(it.qty) > 1 ? ` ×${it.qty}` : ''}{it.returned ? '' : ' (not returned)'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Bill breakdown */}
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+          <div style={row}><span style={muted}>Room charge ({nights} night{nights > 1 ? 's' : ''})</span><span>{formatCurrency(fig.roomCharge, currency)}</span></div>
+          {fig.chargeTotal > 0 && <div style={row}><span style={muted}>Extras</span><span>{formatCurrency(fig.chargeTotal, currency)}</span></div>}
+          <div style={row}><span style={muted}>GST{roomTax ? ` (room ${roomTax}%)` : ''}</span><span>{formatCurrency(fig.estGst, currency)}</span></div>
+          <div style={{ ...row, fontWeight: 700, fontSize: '0.92rem', borderTop: '1px dashed var(--border)', marginTop: 4, paddingTop: 6 }}><span>Total</span><span>{formatCurrency(fig.estTotal, currency)}</span></div>
+          {fig.advance > 0 && <div style={row}><span style={muted}>Advance paid</span><span>− {formatCurrency(fig.advance, currency)}</span></div>}
+          {fig.advance > 0 && <div style={{ ...row, fontWeight: 700, color: fig.balance > 0 ? '#dc2626' : '#059669' }}><span>Balance</span><span>{formatCurrency(fig.balance, currency)}</span></div>}
+        </div>
+
+        <div className="flex justify-end" style={{ gap: 8, marginTop: 16 }}>
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          {!cancelled && <button className="btn btn-primary" onClick={() => onBill(b)}><ReceiptText size={15} /> Bill</button>}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ---------------- Checkout dialog ----------------
