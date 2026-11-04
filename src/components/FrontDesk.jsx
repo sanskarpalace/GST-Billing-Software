@@ -386,7 +386,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
           ) : (
             <div className="table-scroll"><table className="data-table"><thead><tr><th>Guest</th><th>Room</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Status</th><th className="col-center">Actions</th></tr></thead>
               <tbody>{reservations.map((b) => (
-                <tr key={b.id}>
+                <tr key={b.id} onClick={() => setStayDetail(b)} style={{ cursor: 'pointer' }} title="View reservation details">
                   <td className="font-medium">{b.guestName}{b.guestPhone ? <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>{b.guestPhone}</div> : null}</td>
                   <td>{(b.roomIds || []).map((id) => roomById(id)?.number || '?').join(', ')}</td>
                   <td>{fmtDate(b.checkIn)}</td>
@@ -394,9 +394,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                   <td>{nightsBetween(b.checkIn, b.checkOut)}</td>
                   <td><span style={{ color: STATUS.reserved.color, fontWeight: 600, fontSize: '0.8rem' }}>Reserved</span></td>
                   <td><div className="table-actions" style={{ justifyContent: 'center' }}>
-                    <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckIn(b)}><LogIn size={13} /> Check in</button>
-                    <button className="icon-btn" title="Edit" onClick={() => setBookingModal({ mode: 'reserve', booking: b })}><Pencil size={14} /></button>
-                    <button className="icon-btn icon-btn-red" title="Cancel" onClick={() => removeBooking(b, 'Reservation')}><Trash2 size={14} /></button>
+                    <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={(e) => { e.stopPropagation(); doCheckIn(b); }}><LogIn size={13} /> Check in</button>
+                    <button className="icon-btn" title="Edit" onClick={(e) => { e.stopPropagation(); setBookingModal({ mode: 'reserve', booking: b }); }}><Pencil size={14} /></button>
+                    <button className="icon-btn icon-btn-red" title="Cancel" onClick={(e) => { e.stopPropagation(); removeBooking(b, 'Reservation'); }}><Trash2 size={14} /></button>
                   </div></td>
                 </tr>
               ))}</tbody></table></div>
@@ -981,6 +981,9 @@ function StayDetailModal({ booking: b, rooms, currency, onClose, onBill }) {
   const roomTax = Number(b.roomTaxPercent) || 0;
   const returnItems = (b.roomItems || []).filter((it) => it.returnable);
   const cancelled = b.status === 'cancelled';
+  const STATUS_LABEL = { reserved: 'Reserved', 'checked-in': 'Checked in', 'checked-out': 'Checked out', cancelled: 'Cancelled' };
+  const statusLabel = STATUS_LABEL[b.status] || b.status || '—';
+  const statusColor = cancelled ? 'var(--text-muted)' : (STATUS[b.status]?.color || STATUS.occupied.color);
   const row = { display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: '0.85rem', padding: '2px 0' };
   const muted = { color: 'var(--text-muted)' };
   return (
@@ -995,7 +998,7 @@ function StayDetailModal({ booking: b, rooms, currency, onClose, onBill }) {
         <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: '0.9rem', background: 'var(--bg-subtle, rgba(0,0,0,0.02))' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
             <strong style={{ fontSize: '0.95rem' }}>{b.guestName || 'Guest'}</strong>
-            <span style={{ fontWeight: 600, fontSize: '0.8rem', color: cancelled ? 'var(--text-muted)' : STATUS.occupied.color }}>{cancelled ? 'Cancelled' : 'Checked out'}</span>
+            <span style={{ fontWeight: 600, fontSize: '0.8rem', color: statusColor }}>{statusLabel}</span>
           </div>
           {b.guestPhone && <div style={{ fontSize: '0.8rem', ...muted, marginTop: 2 }}>📞 {b.guestPhone}</div>}
           {(b.companyName || b.guestGstin) && (
@@ -1052,7 +1055,7 @@ function StayDetailModal({ booking: b, rooms, currency, onClose, onBill }) {
 
         <div className="flex justify-end" style={{ gap: 8, marginTop: 16 }}>
           <button className="btn btn-secondary" onClick={onClose}>Close</button>
-          {!cancelled && <button className="btn btn-primary" onClick={() => onBill(b)}><ReceiptText size={15} /> Bill</button>}
+          {b.status === 'checked-out' && <button className="btn btn-primary" onClick={() => onBill(b)}><ReceiptText size={15} /> Bill</button>}
         </div>
       </div>
     </div>
