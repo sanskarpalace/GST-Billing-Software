@@ -800,11 +800,7 @@ function EventBilling({ days, receipts, currency, onSaved, onCreateReceipt, onCr
 // (towel, AC remote…) and chargeable extras (dinner, water, cold drinks…).
 // Chargeable items flow onto the GST invoice at "Checkout & bill".
 const RETURN_PRESETS = ['Towel', 'AC remote', 'TV remote', 'Geyser remote', 'Bedsheet', 'Blanket', 'Pillow', 'Hair dryer', 'Bucket & mug', 'Key / Keycard'];
-const CHARGE_PRESETS = [
-  { name: 'Dinner', tax: 5 }, { name: 'Lunch', tax: 5 }, { name: 'Breakfast', tax: 5 },
-  { name: 'Tea / Coffee', tax: 5 }, { name: 'Water bottle', tax: 18 }, { name: 'Cold drink', tax: 12 },
-  { name: 'Snacks', tax: 12 }, { name: 'Laundry', tax: 18 }, { name: 'Extra bed', tax: 5 },
-];
+const CHARGE_PRESETS = ['Dinner', 'Lunch', 'Breakfast', 'Tea / Coffee', 'Water bottle', 'Cold drink', 'Snacks', 'Laundry', 'Extra bed'];
 const TAX_OPTIONS = [0, 5, 12, 18, 28];
 
 function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
@@ -824,13 +820,13 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
     id: it.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: it.name || '', qty: Number(it.qty) || 1,
     returnable: !!it.returnable,
-    chargeable: !!it.chargeable, rate: it.rate ?? '', taxPercent: it.taxPercent ?? 5,
+    chargeable: !!it.chargeable, rate: it.rate ?? '', taxPercent: it.taxPercent ?? 0,
     returned: !!it.returned, hsn: it.hsn || '', unit: it.unit || 'Nos',
   })));
   const [saving, setSaving] = useState(false);
 
   const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const add = (partial) => setItems((prev) => [...prev, { id: uid(), name: '', qty: 1, returnable: false, chargeable: false, rate: '', taxPercent: 5, returned: false, hsn: '', unit: 'Nos', ...partial }]);
+  const add = (partial) => setItems((prev) => [...prev, { id: uid(), name: '', qty: 1, returnable: false, chargeable: false, rate: '', taxPercent: 0, returned: false, hsn: '', unit: 'Nos', ...partial }]);
   const patch = (id, p) => setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...p } : it)));
   const remove = (id) => setItems((prev) => prev.filter((it) => it.id !== id));
 
@@ -891,7 +887,7 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
       </div>
       <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 5 }}>Quick add — chargeable</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-        {CHARGE_PRESETS.map((p) => <button key={p.name} className="btn btn-secondary" style={chip} onClick={() => add({ name: p.name, chargeable: true, taxPercent: p.tax })}><Plus size={12} /> {p.name}</button>)}
+        {CHARGE_PRESETS.map((n) => <button key={n} className="btn btn-secondary" style={chip} onClick={() => add({ name: n, chargeable: true })}><Plus size={12} /> {n}</button>)}
       </div>
 
       {items.length === 0 ? (
