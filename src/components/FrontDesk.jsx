@@ -128,14 +128,15 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
 
   // Persist the list of items issued to a room (amenities to collect back and/or
   // chargeable extras). Stored on the booking so it survives reload and syncs.
-  const saveRoomItems = async (booking, roomItems) => {
-    if (await persistBooking({ ...booking, roomItems })) { setItemsModal(null); toast('Room items saved', 'success'); }
+  const saveRoomItems = async (booking, roomItems, roomTaxPercent) => {
+    if (await persistBooking({ ...booking, roomItems, roomTaxPercent })) { setItemsModal(null); toast('Room items saved', 'success'); }
   };
 
   // Build the pre-filled GST invoice for a stay (used by checkout-and-bill and
   // by the "Bill" action in History for an already-checked-out stay).
   const billFromBooking = (b) => {
     const nights = nightsBetween(b.checkIn, b.checkOut) || 1;
+    const roomTax = Number(b.roomTaxPercent) || 0; // room GST %, user decides (0 = none)
     const roomNos = (b.roomIds || []).map((id) => roomById(id)?.number).filter(Boolean).join(', ');
     const items = (b.roomIds || []).map((id, i) => {
       const room = roomById(id);
@@ -144,10 +145,10 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
         name: [room?.type, room?.number ? `(Room ${room.number})` : ''].filter(Boolean).join(' ') || 'Room charges',
         hsn: '996311', quantity: nights, unit: 'Day',
         rate: Number(b.ratePerNight || room?.baseRate || 0),
-        discount: 0, taxPercent: 5, cessPercent: 0,
+        discount: 0, taxPercent: roomTax, cessPercent: 0,
       };
     });
-    if (!items.length) items.push({ id: `${Date.now()}`, name: 'Room charges', hsn: '996311', quantity: nights, unit: 'Day', rate: Number(b.ratePerNight || 0), discount: 0, taxPercent: 5, cessPercent: 0 });
+    if (!items.length) items.push({ id: `${Date.now()}`, name: 'Room charges', hsn: '996311', quantity: nights, unit: 'Day', rate: Number(b.ratePerNight || 0), discount: 0, taxPercent: roomTax, cessPercent: 0 });
     // Chargeable extras issued to the room (dinner, water, cold drinks, laundry…)
     // flow onto the same invoice as their own line items, after room charges.
     (b.roomItems || []).filter((it) => it.chargeable && Number(it.rate) > 0).forEach((it, i) => {
@@ -478,7 +479,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
       {roomModal && <RoomModal room={roomModal} onClose={() => setRoomModal(null)} onSaved={async () => { setRoomModal(null); await load(); }} />}
       {bookingModal && <BookingModal rooms={rooms} bookings={bookings} ctx={bookingModal} onClose={() => setBookingModal(null)} onSaved={async () => { setBookingModal(null); await load(); }} />}
       {blockModal && <BlockModal rooms={rooms} bookings={bookings} initialSelected={(blockModal && blockModal.preselect) || []} editBlock={(blockModal && blockModal.editBlock) || null} addEvent={(blockModal && blockModal.addEvent) || null} onClose={() => setBlockModal(false)} onSaved={async () => { setBlockModal(false); await load(); }} />}
-      {itemsModal && <RoomItemsModal booking={itemsModal} rooms={rooms} currency={currency} onClose={() => setItemsModal(null)} onSave={(items) => saveRoomItems(itemsModal, items)} />}
+      {itemsModal && <RoomItemsModal booking={itemsModal} rooms={rooms} currency={currency} onClose={() => setItemsModal(null)} onSave={(items, roomTax) => saveRoomItems(itemsModal, items, roomTax)} />}
       {checkoutModal && <CheckoutModal booking={checkoutModal} rooms={rooms} currency={currency} onCancel={() => setCheckoutModal(null)} onConfirm={(date) => confirmCheckout(checkoutModal, date)} />}
       {extendModal && <ExtendModal booking={extendModal} rooms={rooms} currency={currency} onCancel={() => setExtendModal(null)} onConfirm={(date) => confirmExtend(extendModal, date)} />}
       {eventDetail && (() => {
@@ -816,6 +817,7 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
     : stayNights * Number(booking.ratePerNight || 0);
   const perNight = stayNights ? roomCharge / stayNights : 0;
   const advancePaid = Number(booking.advance) || 0;
+  const [roomTaxPercent, setRoomTaxPercent] = useState(Number(booking.roomTaxPercent) || 0);
   const [items, setItems] = useState(() => (booking.roomItems || []).map((it) => ({
     id: it.id || `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     name: it.name || '', qty: Number(it.qty) || 1,
@@ -832,9 +834,10 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
 
   const chargeTotal = items.filter((it) => it.chargeable).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
   const pendingReturns = items.filter((it) => it.returnable && !it.returned).length;
-  // Estimated GST — room charges bill at 5% (as billFromBooking does); each
-  // chargeable extra uses its own rate. Balance = est. total − advance paid.
-  const estGst = roomCharge * 0.05 + items.filter((it) => it.chargeable).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0) * (Number(it.taxPercent) || 0) / 100, 0);
+  // Estimated GST — room charges bill at the chosen room GST % (0 = none, as
+  // billFromBooking does); each chargeable extra uses its own rate.
+  // Balance = est. total − advance paid.
+  const estGst = roomCharge * (roomTaxPercent / 100) + items.filter((it) => it.chargeable).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0) * (Number(it.taxPercent) || 0) / 100, 0);
   const estTotal = roomCharge + chargeTotal + estGst;
   const balanceDue = estTotal - advancePaid;
 
@@ -847,7 +850,7 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
       returned: !!it.returned, hsn: it.hsn || '', unit: it.unit || 'Nos',
     }));
     setSaving(true);
-    try { await onSave(clean); } finally { setSaving(false); }
+    try { await onSave(clean, roomTaxPercent); } finally { setSaving(false); }
   };
 
   const chip = { fontSize: '0.74rem', padding: '0.28rem 0.55rem', borderRadius: 999 };
@@ -875,6 +878,12 @@ function RoomItemsModal({ booking, rooms, currency, onClose, onSave }) {
           <div><span style={{ color: 'var(--text-muted)' }}>Stay</span><br /><strong>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</strong> · {stayNights} night{stayNights > 1 ? 's' : ''}</div>
           <div><span style={{ color: 'var(--text-muted)' }}>Tariff</span><br /><strong>{formatCurrency(perNight, currency)}</strong>/night{roomObjs.length > 1 ? ` · ${roomObjs.length} rooms` : ''}</div>
           <div><span style={{ color: 'var(--text-muted)' }}>Room charge</span><br /><strong>{formatCurrency(roomCharge, currency)}</strong></div>
+          <div>
+            <span style={{ color: 'var(--text-muted)' }}>Room GST</span><br />
+            <select className="form-input" style={{ width: 80, padding: '2px 6px', marginTop: 2 }} value={roomTaxPercent} onChange={(e) => setRoomTaxPercent(Number(e.target.value))} title="GST % on room charges">
+              {TAX_OPTIONS.map((t) => <option key={t} value={t}>{t}%</option>)}
+            </select>
+          </div>
           <div><span style={{ color: 'var(--text-muted)' }}>Advance paid</span><br /><strong style={{ color: advancePaid > 0 ? '#059669' : 'inherit' }}>{formatCurrency(advancePaid, currency)}</strong></div>
         </div>
         {booking.guests && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 6 }}>Guests: {booking.guests}</div>}
@@ -949,7 +958,8 @@ function stayFigures(booking, rooms, nights) {
     : nights * Number(booking.ratePerNight || 0);
   const extras = (booking.roomItems || []).filter((it) => it.chargeable && Number(it.rate) > 0);
   const chargeTotal = extras.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
-  const estGst = roomCharge * 0.05 + extras.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0) * (Number(it.taxPercent) || 0) / 100, 0);
+  const roomTax = Number(booking.roomTaxPercent) || 0;
+  const estGst = roomCharge * (roomTax / 100) + extras.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0) * (Number(it.taxPercent) || 0) / 100, 0);
   const advance = Number(booking.advance) || 0;
   const estTotal = roomCharge + chargeTotal + estGst;
   return { roomObjs, roomCharge, extras, chargeTotal, estGst, advance, estTotal, balance: estTotal - advance };
