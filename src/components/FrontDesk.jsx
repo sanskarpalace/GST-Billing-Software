@@ -29,6 +29,17 @@ const coversDay = (b, day) => {
   return b.checkIn <= day && day < b.checkOut;
 };
 const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
+// Whether a booking physically holds the room on `day` for the LIVE board.
+// A CHECKED-IN stay keeps the room for as long as it stays checked-in — through
+// the checkout day and any overstay — because "checked-in" means the guest has
+// not actually left yet; only the real check-out frees it. Reserved stays and
+// event blocks hold the room over their date range (checkout day free for the
+// next guest, per coversDay).
+const occupiesToday = (b, day) => {
+  if (!isActive(b)) return false;
+  if (b.kind !== 'block' && b.status === 'checked-in') return (b.checkIn || '') <= day;
+  return coversDay(b, day);
+};
 // eventKey (shared with the receipt picker + backfill) groups blocks by eventId
 // when present, else by name — see utils.js.
 
@@ -110,12 +121,18 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     for (const id of ids || []) { const r = roomById(id); if (!r) continue; (r.isHall ? venues : roomsOut).push(r.number); }
     return { rooms: roomsOut, venues };
   };
-  const roomBooking = (roomId) => bookings.find((b) => isActive(b) && (b.roomIds || []).includes(roomId) && coversDay(b, today));
+  // A room may have both a departing checked-in guest and an incoming
+  // reservation on the same day — show the live occupant first, then a block,
+  // then a reservation.
+  const roomBooking = (roomId) => {
+    const here = bookings.filter((b) => (b.roomIds || []).includes(roomId) && occupiesToday(b, today));
+    return here.find((b) => b.status === 'checked-in') || here.find((b) => b.kind === 'block') || here[0] || null;
+  };
   const roomStatus = (room) => {
     const b = roomBooking(room.id);
     if (!b) return { key: 'vacant', booking: null };
     if (b.kind === 'block') return { key: 'blocked', booking: b };
-    if (b.status === 'checked-in') return { key: 'occupied', booking: b };
+    if (b.status === 'checked-in') return { key: 'occupied', booking: b, departing: b.checkOut === today, overdue: (b.checkOut || '') < today };
     return { key: 'reserved', booking: b };
   };
 
@@ -273,7 +290,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   const orderedFloors = [...FLOOR_ORDER.filter((f) => floorsPresent.includes(f)), ...floorsPresent.filter((f) => !FLOOR_ORDER.includes(f))];
 
   const renderCard = (room) => {
-    const { key, booking } = roomStatus(room);
+    const { key, booking, departing, overdue } = roomStatus(room);
     const s = STATUS[key];
     const hall = !!room.isHall;
     return (
@@ -287,6 +304,11 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
           <div style={{ fontSize: '0.8rem' }}>
             <div style={{ fontWeight: 600 }}>{booking.kind === 'block' ? `🎉 ${booking.eventName || 'Event'}` : (booking.guestName || 'Guest')}</div>
             <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</div>
+            {overdue ? (
+              <span style={{ display: 'inline-block', marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#dc2626', background: 'rgba(220,38,38,0.12)', padding: '1px 6px', borderRadius: 999 }}>⚠ Overstay · due {fmtDate(booking.checkOut)}</span>
+            ) : departing ? (
+              <span style={{ display: 'inline-block', marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#d97706', background: 'rgba(217,119,6,0.12)', padding: '1px 6px', borderRadius: 999 }}>→ Departing today</span>
+            ) : null}
           </div>
         )}
         <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
