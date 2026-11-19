@@ -300,8 +300,9 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
     const split = splitSpaces([...new Set(items.flatMap((b) => b.roomIds || []))]);
     // roomCount = distinct physical rooms across the event. roomNights = the
-    // day-wise total (each day's rooms added up) — the real occupancy figure.
-    const roomNights = items.reduce((s, b) => s + splitSpaces(b.roomIds).rooms.length, 0);
+    // day-wise total: each block's rooms × its nights (checkIn→checkOut), added
+    // up — the real occupancy figure (e.g. 14 rooms × 6 nights = 84, not 14).
+    const roomNights = items.reduce((s, b) => s + splitSpaces(b.roomIds).rooms.length * Math.max(1, nightsBetween(b.checkIn, b.checkOut)), 0);
     const released = items.every((b) => b.status === 'released');
     return { ...g, items, released, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, roomNights, venueCount: split.venues.length, notes: items[0].notes };
   }).sort((a, c) => (a.from || '').localeCompare(c.from || ''));
@@ -583,6 +584,15 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                 <p style={{ color: 'var(--text-muted)' }}>No days left for this event.</p>
               ) : (<>
                 {days[0].notes && <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.5rem' }}>{days[0].notes}</p>}
+                {(() => {
+                  const distinctRooms = splitSpaces([...new Set(days.flatMap((b) => b.roomIds || []))]).rooms.length;
+                  const roomNights = days.reduce((s, b) => s + splitSpaces(b.roomIds).rooms.length * Math.max(1, nightsBetween(b.checkIn, b.checkOut)), 0);
+                  return (
+                    <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 0.6rem' }}>
+                      {days.length} day{days.length > 1 ? 's' : ''} · {distinctRooms} room{distinctRooms !== 1 ? 's' : ''} · <strong style={{ color: 'var(--text)' }}>{roomNights} room-night{roomNights !== 1 ? 's' : ''}</strong>
+                    </p>
+                  );
+                })()}
                 <EventBilling days={days} receipts={receipts} currency={currency}
                   onSaved={load}
                   onCreateReceipt={(ref, name, bal) => { receiptForEvent(ref, name, bal); setEventDetail(null); }}
