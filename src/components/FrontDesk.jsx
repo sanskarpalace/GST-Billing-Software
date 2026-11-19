@@ -252,6 +252,20 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     try { await deleteBooking(b.id); await load(); toast(`${label} removed`, 'info'); } catch { toast('Delete failed', 'error'); }
   };
 
+  // Release a whole event at once — frees every room/venue held across all of
+  // its day-blocks in one go (the per-day "Remove day" only frees that date).
+  const releaseEvent = async (days, evName) => {
+    if (!days.length) return;
+    const rooms = new Set(days.flatMap((d) => d.roomIds || []));
+    if (!window.confirm(`Release the entire event "${evName}"?\n\nThis frees all ${days.length} day${days.length > 1 ? 's' : ''} and every room/venue held for it (${rooms.size} in total). It cannot be undone.`)) return;
+    try {
+      await Promise.all(days.map((d) => deleteBooking(d.id)));
+      await load();
+      setEventDetail(null);
+      toast(`Event "${evName}" released`, 'info');
+    } catch { toast('Release failed', 'error'); }
+  };
+
   // Cancel (undo) a check-in or reservation — frees the room, no bill; it is
   // kept in History marked as cancelled rather than deleted.
   const cancelBooking = async (b, label = 'booking') => {
@@ -575,11 +589,16 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                   </div>
                 ))}
               </>)}
-              <div className="flex gap-2 justify-end mt-4">
-                {days.length > 0 && (
-                  <button className="btn btn-secondary" onClick={() => { setBlockModal({ addEvent: { eventId: days[0].eventId, eventName: evName } }); setEventDetail(null); }}><Plus size={14} /> Add day</button>
-                )}
-                <button className="btn btn-primary" onClick={() => setEventDetail(null)}>Done</button>
+              <div className="flex justify-between items-center mt-4" style={{ gap: 8, flexWrap: 'wrap' }}>
+                {days.length > 0 ? (
+                  <button className="btn btn-secondary" style={{ color: '#dc2626', borderColor: '#dc2626' }} onClick={() => releaseEvent(days, evName)} title="Free every room and venue held for this event"><X size={14} /> Release event</button>
+                ) : <span />}
+                <div className="flex gap-2">
+                  {days.length > 0 && (
+                    <button className="btn btn-secondary" onClick={() => { setBlockModal({ addEvent: { eventId: days[0].eventId, eventName: evName } }); setEventDetail(null); }}><Plus size={14} /> Add day</button>
+                  )}
+                  <button className="btn btn-primary" onClick={() => setEventDetail(null)}>Done</button>
+                </div>
               </div>
             </div>
           </div>
