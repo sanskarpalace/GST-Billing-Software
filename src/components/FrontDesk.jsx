@@ -28,7 +28,7 @@ const coversDay = (b, day) => {
   if (b.kind === 'block') return b.checkIn <= day && day <= b.checkOut;
   return b.checkIn <= day && day < b.checkOut;
 };
-const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out';
+const isActive = (b) => b && b.status !== 'cancelled' && b.status !== 'checked-out' && b.status !== 'released';
 // Whether a booking physically holds the room on `day` for the LIVE board.
 // A CHECKED-IN stay keeps the room for as long as it stays checked-in — through
 // the checkout day and any overstay — because "checked-in" means the guest has
@@ -254,15 +254,18 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
 
   // Release a whole event at once — frees every room/venue held across all of
   // its day-blocks in one go (the per-day "Remove day" only frees that date).
+  // The event is ARCHIVED (status 'released'), not deleted: it keeps no rooms
+  // but stays in the Events tab's "Past" filter as a record.
   const releaseEvent = async (days, evName) => {
     if (!days.length) return;
     const rooms = new Set(days.flatMap((d) => d.roomIds || []));
-    if (!window.confirm(`Release the entire event "${evName}"?\n\nThis frees all ${days.length} day${days.length > 1 ? 's' : ''} and every room/venue held for it (${rooms.size} in total). It cannot be undone.`)) return;
+    if (!window.confirm(`Release the entire event "${evName}"?\n\nThis frees all ${days.length} day${days.length > 1 ? 's' : ''} and every room/venue held for it (${rooms.size} in total). The event is kept as history under the "Past" filter.`)) return;
     try {
-      await Promise.all(days.map((d) => deleteBooking(d.id)));
+      const at = new Date().toISOString();
+      await Promise.all(days.map((d) => saveBooking({ ...d, status: 'released', releasedAt: at }, { force: true })));
       await load();
       setEventDetail(null);
-      toast(`Event "${evName}" released`, 'info');
+      toast(`Event "${evName}" released — kept in history`, 'info');
     } catch { toast('Release failed', 'error'); }
   };
 
@@ -284,7 +287,10 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   const arrivals = bookings.filter((b) => isActive(b) && b.kind !== 'block' && b.status === 'reserved' && b.checkIn === today);
   const departures = bookings.filter((b) => b.kind !== 'block' && b.status === 'checked-in' && b.checkOut === today);
   const reservations = bookings.filter((b) => isActive(b) && b.kind !== 'block' && b.status !== 'checked-in').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
-  const blocks = bookings.filter((b) => isActive(b) && b.kind === 'block').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
+  // Blocks for the Events tab include RELEASED ones (archived history), but not
+  // cancelled. The board itself uses isActive (released excluded), so released
+  // events hold no rooms — they only live on as a record here.
+  const blocks = bookings.filter((b) => b.kind === 'block' && b.status !== 'cancelled').sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
   // Group blocks into events (same name), with span + distinct room count.
   const eventGroups = Object.values(blocks.reduce((acc, b) => {
     const key = eventKey(b);
@@ -293,11 +299,13 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   }, {})).map((g) => {
     const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
     const split = splitSpaces([...new Set(items.flatMap((b) => b.roomIds || []))]);
-    return { ...g, items, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, venueCount: split.venues.length, notes: items[0].notes };
+    const released = items.every((b) => b.status === 'released');
+    return { ...g, items, released, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, venueCount: split.venues.length, notes: items[0].notes };
   }).sort((a, c) => (a.from || '').localeCompare(c.from || ''));
+  // Upcoming = still active and not finished; Past = released OR already ended.
   const filteredEvents = eventGroups
     .filter((g) => !blockSearch.trim() || g.name.toLowerCase().includes(blockSearch.trim().toLowerCase()))
-    .filter((g) => blockFilter === 'all' || (blockFilter === 'upcoming' ? g.to >= today : g.to < today));
+    .filter((g) => blockFilter === 'all' || (blockFilter === 'upcoming' ? (!g.released && g.to >= today) : (g.released || g.to < today)));
   const history = bookings.filter((b) => b.kind !== 'block' && (b.status === 'checked-out' || b.status === 'cancelled'))
     .sort((a, b) => (b.checkedOutAt || b.checkOut || '').localeCompare(a.checkedOutAt || a.checkOut || ''));
 
@@ -409,7 +417,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
 
       {/* Tabs */}
       <div className="flex gap-2" style={{ marginBottom: '1rem', flexWrap: 'wrap' }}>
-        {[['board', 'Board'], ['reservations', `Reservations${reservations.length ? ` (${reservations.length})` : ''}`], ['blocks', `Events${eventGroups.length ? ` (${eventGroups.length})` : ''}`], ['history', `History${history.length ? ` (${history.length})` : ''}`], ['rooms', 'Rooms']].map(([k, label]) => (
+        {[['board', 'Board'], ['reservations', `Reservations${reservations.length ? ` (${reservations.length})` : ''}`], ['blocks', `Events${eventGroups.filter((g) => !g.released).length ? ` (${eventGroups.filter((g) => !g.released).length})` : ''}`], ['history', `History${history.length ? ` (${history.length})` : ''}`], ['rooms', 'Rooms']].map(([k, label]) => (
           <button key={k} className={`btn ${tab === k ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -488,7 +496,11 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                 style={{ width: '100%', textAlign: 'left', cursor: 'pointer', padding: '0.85rem 1rem', marginBottom: '0.6rem', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <strong style={{ fontSize: '0.95rem' }}>🎉 {g.name}</strong>
-                  {g.to < today && <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>(past)</span>}
+                  {g.released ? (
+                    <span style={{ fontSize: '0.64rem', fontWeight: 700, color: 'var(--text-muted)', background: 'rgba(0,0,0,0.06)', padding: '1px 6px', borderRadius: 999, marginLeft: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Released</span>
+                  ) : g.to < today ? (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>(past)</span>
+                  ) : null}
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
                     {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.roomCount} room{g.roomCount !== 1 ? 's' : ''}{g.venueCount > 0 ? ` · ${g.venueCount} venue${g.venueCount !== 1 ? 's' : ''}` : ''}
                   </div>
@@ -553,13 +565,17 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
       {eventDetail && (() => {
         const days = blocks.filter((b) => eventKey(b) === eventDetail).sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
         const evName = days[0]?.eventName || 'Event';
+        const released = days.length > 0 && days.every((b) => b.status === 'released');
         return (
           <div className="modal-overlay" onClick={() => setEventDetail(null)}>
             <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
               <div className="flex justify-between items-center mb-4">
-                <h3 className="section-title" style={{ margin: 0 }}>🎉 {evName}</h3>
+                <h3 className="section-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>🎉 {evName}
+                  {released && <span style={{ fontSize: '0.62rem', fontWeight: 700, color: 'var(--text-muted)', background: 'rgba(0,0,0,0.06)', padding: '2px 7px', borderRadius: 999, textTransform: 'uppercase', letterSpacing: '0.03em' }}>Released</span>}
+                </h3>
                 <button className="icon-btn" onClick={() => setEventDetail(null)}><X size={18} /></button>
               </div>
+              {released && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 0.6rem' }}>This event has been released — its rooms are free. Kept here as a record.</p>}
               {days.length === 0 ? (
                 <p style={{ color: 'var(--text-muted)' }}>No days left for this event.</p>
               ) : (<>
@@ -572,10 +588,12 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                   <div key={b.id} style={{ padding: '0.6rem 0', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <strong style={{ fontSize: '0.88rem' }}>{fmtDate(b.checkIn)}{b.checkOut !== b.checkIn ? ` – ${fmtDate(b.checkOut)}` : ''}</strong>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => { setBlockModal({ editBlock: b }); setEventDetail(null); }}><Pencil size={13} /> Edit</button>
-                        <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => removeBooking(b, 'Event block')}><Trash2 size={13} /> Remove day</button>
-                      </div>
+                      {!released && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => { setBlockModal({ editBlock: b }); setEventDetail(null); }}><Pencil size={13} /> Edit</button>
+                          <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.25rem 0.6rem' }} onClick={() => removeBooking(b, 'Event block')}><Trash2 size={13} /> Remove day</button>
+                        </div>
+                      )}
                     </div>
                     {(() => {
                       const s = splitSpaces(b.roomIds);
@@ -590,11 +608,11 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                 ))}
               </>)}
               <div className="flex justify-between items-center mt-4" style={{ gap: 8, flexWrap: 'wrap' }}>
-                {days.length > 0 ? (
+                {days.length > 0 && !released ? (
                   <button className="btn btn-secondary" style={{ color: '#dc2626', borderColor: '#dc2626' }} onClick={() => releaseEvent(days, evName)} title="Free every room and venue held for this event"><X size={14} /> Release event</button>
                 ) : <span />}
                 <div className="flex gap-2">
-                  {days.length > 0 && (
+                  {days.length > 0 && !released && (
                     <button className="btn btn-secondary" onClick={() => { setBlockModal({ addEvent: { eventId: days[0].eventId, eventName: evName } }); setEventDetail(null); }}><Plus size={14} /> Add day</button>
                   )}
                   <button className="btn btn-primary" onClick={() => setEventDetail(null)}>Done</button>
