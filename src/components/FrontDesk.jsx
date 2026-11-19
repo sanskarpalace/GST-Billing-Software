@@ -299,8 +299,11 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   }, {})).map((g) => {
     const items = [...g.items].sort((a, b) => (a.checkIn || '').localeCompare(b.checkIn || ''));
     const split = splitSpaces([...new Set(items.flatMap((b) => b.roomIds || []))]);
+    // roomCount = distinct physical rooms across the event. roomNights = the
+    // day-wise total (each day's rooms added up) — the real occupancy figure.
+    const roomNights = items.reduce((s, b) => s + splitSpaces(b.roomIds).rooms.length, 0);
     const released = items.every((b) => b.status === 'released');
-    return { ...g, items, released, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, venueCount: split.venues.length, notes: items[0].notes };
+    return { ...g, items, released, from: items[0].checkIn, to: items[items.length - 1].checkOut, roomCount: split.rooms.length, roomNights, venueCount: split.venues.length, notes: items[0].notes };
   }).sort((a, c) => (a.from || '').localeCompare(c.from || ''));
   // Upcoming = still active and not finished; Past = released OR already ended.
   const filteredEvents = eventGroups
@@ -502,7 +505,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                     <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>(past)</span>
                   ) : null}
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.roomCount} room{g.roomCount !== 1 ? 's' : ''}{g.venueCount > 0 ? ` · ${g.venueCount} venue${g.venueCount !== 1 ? 's' : ''}` : ''}
+                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.roomCount} room{g.roomCount !== 1 ? 's' : ''}{g.roomNights !== g.roomCount ? ` · ${g.roomNights} room-night${g.roomNights !== 1 ? 's' : ''}` : ''}{g.venueCount > 0 ? ` · ${g.venueCount} venue${g.venueCount !== 1 ? 's' : ''}` : ''}
                   </div>
                 </div>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>View ›</span>
