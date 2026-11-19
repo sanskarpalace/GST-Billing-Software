@@ -505,7 +505,7 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
                     <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginLeft: 6 }}>(past)</span>
                   ) : null}
                   <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.roomCount} room{g.roomCount !== 1 ? 's' : ''}{g.roomNights !== g.roomCount ? ` · ${g.roomNights} room-night${g.roomNights !== 1 ? 's' : ''}` : ''}{g.venueCount > 0 ? ` · ${g.venueCount} venue${g.venueCount !== 1 ? 's' : ''}` : ''}
+                    {fmtDate(g.from)}{g.to !== g.from ? ` – ${fmtDate(g.to)}` : ''} · {g.items.length} day{g.items.length > 1 ? 's' : ''} · {g.roomCount} room{g.roomCount !== 1 ? 's' : ''} · {g.roomNights} room-night{g.roomNights !== 1 ? 's' : ''}{g.venueCount > 0 ? ` · ${g.venueCount} venue${g.venueCount !== 1 ? 's' : ''}` : ''}
                   </div>
                 </div>
                 <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>View ›</span>
