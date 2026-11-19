@@ -121,19 +121,26 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
     for (const id of ids || []) { const r = roomById(id); if (!r) continue; (r.isHall ? venues : roomsOut).push(r.number); }
     return { rooms: roomsOut, venues };
   };
-  // A room may have both a departing checked-in guest and an incoming
-  // reservation on the same day — show the live occupant first, then a block,
-  // then a reservation.
-  const roomBooking = (roomId) => {
+  // A room can have more than one booking touching the same day — e.g. a
+  // departing checked-in guest AND an arriving reservation (turnover), or a
+  // stay alongside an event block. Return them all, live occupant first, then
+  // block, then reservations by date, so the board can show every one.
+  const roomBookingsToday = (roomId) => {
     const here = bookings.filter((b) => (b.roomIds || []).includes(roomId) && occupiesToday(b, today));
-    return here.find((b) => b.status === 'checked-in') || here.find((b) => b.kind === 'block') || here[0] || null;
+    const rank = (b) => (b.status === 'checked-in' ? 0 : b.kind === 'block' ? 1 : 2);
+    return here.sort((a, b) => rank(a) - rank(b) || (a.checkIn || '').localeCompare(b.checkIn || ''));
   };
+  // Status of a single booking for today (border colour, chips, actions).
+  const bookingStatus = (b) => {
+    if (b.kind === 'block') return { key: 'blocked' };
+    if (b.status === 'checked-in') return { key: 'occupied', departing: b.checkOut === today, overdue: (b.checkOut || '') < today };
+    return { key: 'reserved', arriving: b.checkIn === today };
+  };
+  // Primary (card-level) status = the first booking by the ranking above.
   const roomStatus = (room) => {
-    const b = roomBooking(room.id);
+    const b = roomBookingsToday(room.id)[0];
     if (!b) return { key: 'vacant', booking: null };
-    if (b.kind === 'block') return { key: 'blocked', booking: b };
-    if (b.status === 'checked-in') return { key: 'occupied', booking: b, departing: b.checkOut === today, overdue: (b.checkOut || '') < today };
-    return { key: 'reserved', booking: b };
+    return { ...bookingStatus(b), booking: b };
   };
 
   // ---- actions ----
@@ -289,49 +296,72 @@ export default function FrontDesk({ profile, onCreateInvoiceFromStay, onOpenRece
   const floorsPresent = [...new Set(rooms.map((r) => r.floor || 'Other'))];
   const orderedFloors = [...FLOOR_ORDER.filter((f) => floorsPresent.includes(f)), ...floorsPresent.filter((f) => !FLOOR_ORDER.includes(f))];
 
-  const renderCard = (room) => {
-    const { key, booking, departing, overdue } = roomStatus(room);
-    const s = STATUS[key];
-    const hall = !!room.isHall;
+  const btnSm = { fontSize: '0.74rem', padding: '0.3rem 0.6rem' };
+  const btnSq = { fontSize: '0.74rem', padding: '0.3rem 0.5rem' };
+  const chipBase = { display: 'inline-block', marginTop: 3, fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999 };
+  // One booking inside a room card: its label/dates, a status chip when the
+  // room holds more than one booking today, a departing/overstay/arriving chip,
+  // and the actions for that booking.
+  const bookingRow = (room, b, idx, multi) => {
+    const st = bookingStatus(b);
+    const isBlock = b.kind === 'block';
+    const miniLabel = st.key === 'occupied' ? 'In house' : st.key === 'reserved' ? 'Arriving' : 'Event';
     return (
-      <div key={room.id} className="glass-panel" style={{ padding: '0.85rem', borderLeft: `4px solid ${s.color}`, background: key === 'vacant' ? undefined : s.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div key={b.id} style={{ borderTop: multi && idx > 0 ? '1px dashed var(--border)' : 'none', paddingTop: multi && idx > 0 ? 7 : 0, display: 'flex', flexDirection: 'column', gap: 5 }}>
+        <div style={{ fontSize: '0.8rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
+            <span style={{ fontWeight: 600 }}>{isBlock ? `🎉 ${b.eventName || 'Event'}` : (b.guestName || 'Guest')}</span>
+            {multi && <span style={{ fontSize: '0.62rem', fontWeight: 700, color: STATUS[st.key].color, textTransform: 'uppercase', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>{miniLabel}</span>}
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{fmtDate(b.checkIn)} → {fmtDate(b.checkOut)}</div>
+          {st.overdue ? (
+            <span style={{ ...chipBase, color: '#dc2626', background: 'rgba(220,38,38,0.12)' }}>⚠ Overstay · due {fmtDate(b.checkOut)}</span>
+          ) : st.departing ? (
+            <span style={{ ...chipBase, color: '#d97706', background: 'rgba(217,119,6,0.12)' }}>→ Departing today</span>
+          ) : st.arriving ? (
+            <span style={{ ...chipBase, color: '#059669', background: 'rgba(5,150,105,0.12)' }}>↓ Arriving today</span>
+          ) : null}
+        </div>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+          {st.key === 'blocked' && <button className="btn btn-secondary" style={btnSm} onClick={() => removeBooking(b, 'Event block')}><X size={13} /> Release</button>}
+          {st.key === 'reserved' && <>
+            <button className="btn btn-primary" style={btnSm} onClick={() => doCheckIn(b)}><LogIn size={13} /> Check in</button>
+            <button className="btn btn-secondary" style={btnSq} onClick={() => cancelBooking(b, 'reservation')} title="Cancel reservation"><Trash2 size={13} /></button>
+          </>}
+          {st.key === 'occupied' && <>
+            <button className="btn btn-secondary" style={btnSm} onClick={() => setItemsModal(b)} title="Items issued to this room — collect back / chargeable"><Package size={13} /> Items{(b.roomItems || []).length ? ` (${(b.roomItems || []).length})` : ''}</button>
+            <button className="btn btn-secondary" style={btnSm} onClick={() => setExtendModal(b)} title="Extend this stay — push the check-out date later"><CalendarPlus size={13} /> Extend</button>
+            <button className="btn btn-primary" style={btnSm} onClick={() => setCheckoutModal(b)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
+            <button className="btn btn-secondary" style={btnSq} onClick={() => doCheckOutOnly(b)} title="Check out without billing"><LogOut size={13} /></button>
+            <button className="btn btn-secondary" style={btnSq} onClick={() => cancelBooking(b, 'check-in')} title="Cancel this check-in (mistake) — frees the room, no bill"><Trash2 size={13} /></button>
+          </>}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCard = (room) => {
+    const hall = !!room.isHall;
+    const here = roomBookingsToday(room.id);
+    const primary = here[0] ? bookingStatus(here[0]) : { key: 'vacant' };
+    const s = STATUS[primary.key];
+    const multi = here.length > 1;
+    return (
+      <div key={room.id} className="glass-panel" style={{ padding: '0.85rem', borderLeft: `4px solid ${s.color}`, background: primary.key === 'vacant' ? undefined : s.bg, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
           <strong style={{ fontSize: hall ? '0.9rem' : '1.05rem' }}>{room.number}</strong>
-          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}</span>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, color: s.color, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{s.label}{multi ? ` · ${here.length}` : ''}</span>
         </div>
         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{hall ? '🏛 ' : ''}{room.type || 'Room'}{!hall && room.baseRate ? ` · ${formatCurrency(room.baseRate, currency)}/night` : ''}</div>
-        {booking && (
-          <div style={{ fontSize: '0.8rem' }}>
-            <div style={{ fontWeight: 600 }}>{booking.kind === 'block' ? `🎉 ${booking.eventName || 'Event'}` : (booking.guestName || 'Guest')}</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: '0.74rem' }}>{fmtDate(booking.checkIn)} → {fmtDate(booking.checkOut)}</div>
-            {overdue ? (
-              <span style={{ display: 'inline-block', marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#dc2626', background: 'rgba(220,38,38,0.12)', padding: '1px 6px', borderRadius: 999 }}>⚠ Overstay · due {fmtDate(booking.checkOut)}</span>
-            ) : departing ? (
-              <span style={{ display: 'inline-block', marginTop: 3, fontSize: '0.68rem', fontWeight: 700, color: '#d97706', background: 'rgba(217,119,6,0.12)', padding: '1px 6px', borderRadius: 999 }}>→ Departing today</span>
-            ) : null}
+        {here.length === 0 ? (
+          <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
+            {hall
+              ? <button className="btn btn-primary" style={btnSm} onClick={() => setBlockModal({ preselect: [room.id] })}><CalendarDays size={13} /> Block</button>
+              : <button className="btn btn-primary" style={btnSm} onClick={() => setBookingModal({ mode: 'checkin', roomId: room.id })}><LogIn size={13} /> Check in</button>}
           </div>
+        ) : (
+          here.map((b, i) => bookingRow(room, b, i, multi))
         )}
-        <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
-          {hall ? (
-            key === 'blocked'
-              ? <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => removeBooking(booking, 'Event block')}><X size={13} /> Release</button>
-              : <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBlockModal({ preselect: [room.id] })}><CalendarDays size={13} /> Block</button>
-          ) : (<>
-            {key === 'vacant' && <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setBookingModal({ mode: 'checkin', roomId: room.id })}><LogIn size={13} /> Check in</button>}
-            {key === 'reserved' && <>
-              <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => doCheckIn(booking)}><LogIn size={13} /> Check in</button>
-              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'reservation')} title="Cancel reservation"><Trash2 size={13} /></button>
-            </>}
-            {key === 'occupied' && <>
-              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setItemsModal(booking)} title="Items issued to this room — collect back / chargeable"><Package size={13} /> Items{(booking.roomItems || []).length ? ` (${(booking.roomItems || []).length})` : ''}</button>
-              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setExtendModal(booking)} title="Extend this stay — push the check-out date later"><CalendarPlus size={13} /> Extend</button>
-              <button className="btn btn-primary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => setCheckoutModal(booking)} title="Check out and create the GST invoice"><ReceiptText size={13} /> Checkout &amp; bill</button>
-              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => doCheckOutOnly(booking)} title="Check out without billing"><LogOut size={13} /></button>
-              <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.5rem' }} onClick={() => cancelBooking(booking, 'check-in')} title="Cancel this check-in (mistake) — frees the room, no bill"><Trash2 size={13} /></button>
-            </>}
-            {key === 'blocked' && <button className="btn btn-secondary" style={{ fontSize: '0.74rem', padding: '0.3rem 0.6rem' }} onClick={() => removeBooking(booking, 'Event block')}><X size={13} /> Release</button>}
-          </>)}
-        </div>
       </div>
     );
   };
